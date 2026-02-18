@@ -1,0 +1,164 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2821
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 # PRD \'97 Legal Search AI (MVP) \'97 Closed-Book Chat System\
+Version: 0.1  \
+Owner: Sigur\'f0ur Ari Sn\'e6bj\'f6rnsson  \
+Date: 2026-02-09  \
+\
+---\
+\
+## 1. Overview\
+\
+This MVP is a **closed-book AI chat system** for Icelandic legal information.  \
+The system answers user questions about **laws, regulations, and later court decisions**, using **only data stored in its own database**.\
+\
+The AI **must not**:\
+- Access the public internet at runtime\
+- Use general world knowledge\
+- Invent legal facts, citations, or interpretations\
+\
+Every answer must be **explicitly grounded in stored legal sources** and include **verifiable citations**.\
+\
+---\
+\
+## 2. Goals\
+\
+### Primary Goals\
+- Provide accurate, source-grounded answers to legal questions\
+- Cite laws, articles, paragraphs, or court cases explicitly\
+- Prevent hallucinations (\'93no evidence \uc0\u8594  no answer\'94)\
+\
+### Non-Goals (MVP)\
+- Legal advice or opinions\
+- Full natural-language legal reasoning\
+- Support for non-Icelandic law\
+- User accounts or authentication\
+\
+---\
+\
+## 3. MVP Scope\
+\
+### Included\
+- AI chat interface\
+- Search over stored legal texts\
+- Citation-based answers\
+- Laws from Al\'feingi (Lagasafn)\
+- Local ingestion + indexing pipeline\
+\
+### Excluded (Phase 2+)\
+- Court decisions\
+- Regulations outside Lagasafn\
+- Real-time external API calls\
+- Editing or annotating documents\
+\
+---\
+\
+## 4. Data Sources (MVP)\
+\
+### 4.1 Icelandic Laws (Al\'feingi)\
+Source:\
+- Lagasafn (ZIP / SGML / text releases)\
+\
+Ingestion strategy:\
+- Download official releases\
+- Parse into structured text\
+- Preserve article / paragraph structure\
+- Store version metadata\
+\
+---\
+\
+## 5. System Architecture (High Level)\
+\
+### Components\
+1. **Ingestion Worker**\
+   - Downloads legal data\
+   - Parses and normalizes text\
+   - Splits documents into searchable chunks\
+   - Stores data in database\
+\
+2. **Search Layer**\
+   - Keyword search (BM25)\
+   - Semantic/vector search\
+   - Result reranking\
+\
+3. **AI Chat Engine**\
+   - Receives user query\
+   - Retrieves relevant chunks\
+   - Generates answer ONLY from retrieved context\
+   - Outputs structured answer + citations\
+\
+4. **Validation Layer**\
+   - Verifies all quotes exist verbatim in stored text\
+   - Rejects responses with invalid citations\
+\
+---\
+\
+## 6. Data Model (Simplified)\
+\
+### 6.1 Documents Table\
+- id\
+- source (e.g. \'93Althingi\'94)\
+- document_type (law, regulation)\
+- title\
+- law_number\
+- publication_date\
+- version_tag\
+- canonical_url\
+- full_text\
+- metadata_json\
+\
+### 6.2 Chunks Table\
+- id\
+- document_id\
+- chunk_text\
+- locator (e.g. \'93Law no. X/XXXX \'96 Article 12, para. 2\'94)\
+- embedding_vector\
+- keyword_index_fields\
+\
+---\
+\
+## 7. Search Requirements\
+\
+- Support exact legal references (article numbers, law numbers)\
+- Support conceptual questions (\'93What are the requirements for X?\'94)\
+- Combine keyword + semantic results\
+- Return top N (5\'9615) evidence chunks\
+\
+---\
+\
+## 8. AI Chat Rules (Hard Constraints)\
+\
+The AI assistant MUST:\
+\
+1. Use ONLY the provided context (retrieved chunks)\
+2. Refuse to answer if sufficient evidence is missing\
+3. Cite sources for every factual claim\
+4. Prefer direct quotes where possible\
+5. Never guess article numbers, dates, or legal effects\
+\
+---\
+\
+## 9. Response Format (Strict)\
+\
+The AI must return structured JSON:\
+\
+```json\
+\{\
+  "answer_markdown": "...",\
+  "citations": [\
+    \{\
+      "document_id": "...",\
+      "locator": "...",\
+      "quote": "...",\
+      "canonical_url": "..."\
+    \}\
+  ],\
+  "confidence": "low | medium | high",\
+  "missing_information": null\
+\}\
+}

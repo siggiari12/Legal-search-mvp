@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="is">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lögfræðileg Leit - Legal Search</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">Lögfræðileg Leit</h1>
+                <span class="subtitle">Leit í íslenskum lögum</span>
+            </div>
+        </header>
+
+        <!-- Disclaimer Banner -->
+        <div class="disclaimer-banner">
+            <span class="disclaimer-icon">⚠</span>
+            <span class="disclaimer-text">
+                Til upplýsinga eingöngu. Staðfestið við opinberar heimildir áður en aðgerðir eru gerðar.
+            </span>
+        </div>
+
+        <!-- Main Chat Area -->
+        <main class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <!-- Welcome message -->
+                <div class="message assistant-message">
+                    <div class="message-content">
+                        <p>Velkomin! Ég er lögfræðilegur aðstoðarmaður sem svarar spurningum um íslensk lög.</p>
+                        <p>Þú getur spurt mig um:</p>
+                        <ul>
+                            <li>Tilteknar lagagreinar (t.d. "Hvað segir 1. gr. laga nr. 33/1944?")</li>
+                            <li>Lagaleg hugtök (t.d. "Hvað segja lög um mannréttindi?")</li>
+                            <li>Tiltekna löggjöf (t.d. "Hvaða lög gilda um þjóðfána?")</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-container">
+                <form id="chatForm" class="chat-form">
+                    <textarea
+                        id="queryInput"
+                        class="query-input"
+                        placeholder="Skrifaðu spurningu hér..."
+                        rows="1"
+                        autofocus
+                    ></textarea>
+                    <button type="submit" class="submit-button" id="submitButton">
+                        <span class="button-text">Senda</span>
+                        <span class="button-loading hidden">
+                            <span class="spinner"></span>
+                        </span>
+                    </button>
+                </form>
+                <div class="input-hint">
+                    Ýttu á Enter til að senda, Shift+Enter fyrir nýja línu
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <span>Legal Search MVP</span>
+                <span class="separator">•</span>
+                <span>Byggt á Lagasafni Alþingis</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log>
+    <nr>85</nr>
+    <ar>2024</ar>
+    <heiti>Lög um gervigreind</heiti>
+
+    <grein>
+        <nr>1</nr>
+        <mgr>
+            <nr>1</nr>
+            Lög þessi gilda um notkun gervigreindar í opinberri þjónustu.
+        </mgr>
+        <mgr>
+            <nr>2</nr>
+            Markmið laganna er að tryggja örugga og ábyrga notkun gervigreindar.
+        </mgr>
+    </grein>
+
+    <grein>
+        <nr>2</nr>
+        <mgr>
+            <nr>1</nr>
+            Ábyrgðaraðili skal tryggja að gervigreindarkerfi séu gegnsæ og sanngjörn.
+        </mgr>
+    </grein>
+
+    <grein>
+        <nr>3</nr>
+        <mgr>
+            <nr>1</nr>
+            Einstaklingar hafa rétt til útskýringa á ákvörðunum sem teknar eru með aðstoð gervigreindar.
+        </mgr>
+    </grein>
+</log>

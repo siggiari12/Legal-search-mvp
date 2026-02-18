@@ -1,0 +1,1222 @@
+# Legal Search AI MVP - Implementation Plan
+
+**Timeline:** 1-2 weeks
+**Target Users:** Lawyers / Legal professionals
+**Stack:** Python + FastAPI, Supabase (pgvector), Claude API, OpenAI embeddings
+
+---
+
+## Phase 1: Project Setup (Day 1)
+
+### 1.1 Initialize Project Structure
+```
+legal-search-mvp/
+├── app/
+│   ├── __init__.py
+│   ├── main.py              # FastAPI entry point
+│   ├── config.py            # Settings & env vars
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── schemas.py       # Pydantic models
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── ingestion.py     # SGML parsing & data loading
+│   │   ├── embedding.py     # OpenAI embeddings
+│   │   ├── search.py        # Vector search
+│   │   ├── chat.py          # Claude integration
+│   │   └── validation.py    # Citation verification
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── connection.py    # Supabase client
+│   │   └── queries.py       # Database operations
+│   └── api/
+│       ├── __init__.py
+│       └── routes.py        # API endpoints
+├── frontend/
+│   ├── index.html           # Chat interface
+│   ├── styles.css           # Professional styling
+│   └── app.js               # Frontend logic
+├── tests/
+│   ├── __init__.py
+│   ├── test_validation.py   # Citation validation tests
+│   ├── test_search.py       # Search accuracy tests
+│   └── test_ingestion.py    # SGML parsing tests
+├── scripts/
+│   └── ingest_lagasafn.py   # One-time ingestion script
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+### 1.2 Dependencies
+```
+fastapi
+uvicorn
+supabase
+openai
+anthropic
+python-dotenv
+pydantic
+pytest
+pytest-asyncio
+httpx
+beautifulsoup4         # For SGML/XML parsing
+lxml                   # XML parser backend
+```
+
+### 1.3 Supabase Setup
+- Create new Supabase project
+- Enable pgvector extension
+- Create tables:
+
+```sql
+-- Documents table
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source TEXT NOT NULL DEFAULT 'Althingi',
+    document_type TEXT NOT NULL DEFAULT 'law',
+    title TEXT NOT NULL,
+    law_number TEXT NOT NULL,           -- e.g., "33/1944"
+    publication_date DATE,
+    version_tag TEXT,
+    canonical_url TEXT,
+    full_text TEXT NOT NULL,
+    metadata_json JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Chunks table with vector embeddings
+CREATE TABLE chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES documents(id),
+    chunk_text TEXT NOT NULL,
+    locator TEXT NOT NULL,              -- e.g., "Lög nr. 33/1944 - 1. gr., 2. mgr."
+    article_number TEXT,                -- For direct lookup
+    paragraph_number TEXT,
+    embedding vector(1536),             -- OpenAI text-embedding-3-small dimension
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for vector similarity search
+CREATE INDEX ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Index for law number lookups
+CREATE INDEX ON documents (law_number);
+CREATE INDEX ON chunks (article_number);
+
+-- Query logs for basic analytics
+CREATE TABLE query_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    query_text TEXT NOT NULL,
+    response_json JSONB,
+    validation_passed BOOLEAN,
+    retry_count INT DEFAULT 0,
+    ip_hash TEXT,                       -- Hashed IP for rate limiting
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+## Phase 2: Data Ingestion (Days 2-3)
+
+### 2.1 Obtain Lagasafn Data
+- Download from Althingi's official release (SGML/ZIP format)
+- Expected location: https://www.althingi.is/lagasafn/
+
+### 2.2 SGML Parser (`services/ingestion.py`)
+
+**Strategy:** Use BeautifulSoup with lxml parser to handle SGML/XML
+
+```python
+# Key parsing logic:
+# 1. Extract law metadata (title, law_number, date)
+# 2. Split by article (grein/gr.)
+# 3. Preserve paragraph structure (málsgrein/mgr.)
+# 4. Build locator strings for citations
+```
+
+**Chunking Rules:**
+- One chunk = one article (grein)
+- If article > 1000 tokens, split by paragraph (málsgrein)
+- Preserve: article number, paragraph number, law reference
+- Locator format: `"Lög nr. {law_number} - {article}. gr., {paragraph}. mgr."`
+
+### 2.3 Embedding Generation (`services/embedding.py`)
+- Use OpenAI `text-embedding-3-small` (1536 dimensions)
+- Batch processing: 100 chunks per API call
+- Rate limiting: respect OpenAI limits
+- Store embeddings in Supabase chunks table
+
+### 2.4 Law Number Index
+- Build lookup table for shortcuts like "33/1944"
+- Support formats: "33/1944", "lög nr. 33/1944", "l. 33/1944"
+
+---
+
+## Phase 3: Search Layer (Day 4)
+
+### 3.1 Vector Search (`services/search.py`)
+
+```python
+async def search_chunks(query: str, top_k: int = 10) -> List[Chunk]:
+    # 1. Check for law number pattern (e.g., "33/1944")
+    law_ref = extract_law_reference(query)
+
+    if law_ref:
+        # Direct lookup for specific law references
+        chunks = await db.get_chunks_by_law(law_ref)
+        if chunks:
+            return chunks
+
+    # 2. Semantic search for conceptual queries
+    query_embedding = await get_embedding(query)
+    chunks = await db.vector_search(query_embedding, top_k)
+
+    return chunks
+```
+
+### 3.2 Law Reference Extraction
+```python
+# Regex patterns for Icelandic law references:
+# - "33/1944" or "nr. 33/1944"
+# - "lög nr. 33/1944"
+# - "1. gr. laga nr. 33/1944"
+```
+
+---
+
+## Phase 4: Chat Engine (Days 5-6)
+
+### 4.1 Claude Integration (`services/chat.py`)
+
+**System Prompt (Icelandic):**
+```
+Þú ert lögfræðilegur aðstoðarmaður sem svarar spurningum eingöngu út frá lagagögnum sem þú færð.
+
+REGLUR:
+1. Svaraðu EINGÖNGU út frá gefnu samhengi (retrieved chunks)
+2. Ef þú finnur ekki nægjanlegar upplýsingar, neita að svara
+3. Vitnaðu í heimildir fyrir hverja staðhæfingu
+4. Notaðu beinar tilvitnanir þar sem hægt er
+5. Giska ALDREI á greinar, dagsetningar eða lagaleg áhrif
+6. Þegar margar lög eiga við, skiptu svari í hluta eftir heimildum
+
+TILVITNANASNIÐ:
+- Notaðu NÁKVÆMAR tilvitnanir úr textanum
+- Tilvitnun verður að vera orðrétt úr gagnagrunni
+```
+
+**Response Format:**
+```json
+{
+  "answer_markdown": "...",
+  "citations": [
+    {
+      "document_id": "uuid",
+      "locator": "Lög nr. 33/1944 - 1. gr., 2. mgr.",
+      "quote": "Exact quote from the law...",
+      "canonical_url": "https://..."
+    }
+  ],
+  "confidence": "high",
+  "needs_clarification": false,
+  "clarification_question": null
+}
+```
+
+### 4.2 Ambiguous Query Handling
+- If query is too vague, set `needs_clarification: true`
+- Return `clarification_question` in Icelandic
+- Frontend shows clarification prompt instead of answer
+
+---
+
+## Phase 5: Validation Layer (Days 6-7)
+
+### 5.1 Exact Quote Validation (`services/validation.py`)
+
+**CRITICAL - This is your biggest concern**
+
+```python
+async def validate_response(response: dict, chunks: List[Chunk]) -> ValidationResult:
+    """
+    Verify all citations exist EXACTLY in the stored text.
+    Returns ValidationResult with pass/fail and details.
+    """
+    all_chunk_text = " ".join([c.chunk_text for c in chunks])
+
+    for citation in response["citations"]:
+        quote = citation["quote"]
+
+        # Normalize whitespace but keep exact characters
+        normalized_quote = normalize_whitespace(quote)
+        normalized_source = normalize_whitespace(all_chunk_text)
+
+        if normalized_quote not in normalized_source:
+            return ValidationResult(
+                passed=False,
+                failed_citation=citation,
+                reason="Quote not found verbatim in source"
+            )
+
+    return ValidationResult(passed=True)
+```
+
+### 5.2 Retry Logic
+```python
+async def generate_validated_answer(query: str) -> dict:
+    MAX_RETRIES = 2
+
+    for attempt in range(MAX_RETRIES):
+        chunks = await search_chunks(query)
+        response = await generate_answer(query, chunks)
+        validation = await validate_response(response, chunks)
+
+        if validation.passed:
+            return response
+
+        if attempt < MAX_RETRIES - 1:
+            # Retry with stricter prompt
+            response = await generate_answer(
+                query, chunks,
+                extra_instruction="MIKILVÆGT: Notaðu EINGÖNGU orðrétt texta úr heimildunum."
+            )
+
+    # All retries failed - return refusal
+    return {
+        "answer_markdown": "Ég get ekki svarað þessari spurningu með áreiðanlegum heimildum úr lagagagnagrunni.",
+        "citations": [],
+        "confidence": "none",
+        "validation_failed": True
+    }
+```
+
+---
+
+## Phase 6: API Layer (Day 7)
+
+### 6.1 Endpoints (`api/routes.py`)
+
+```python
+POST /api/chat
+{
+  "query": "Hvað segir í stjórnarskránni um mannréttindi?"
+}
+
+Response:
+{
+  "answer_markdown": "...",
+  "citations": [...],
+  "confidence": "high",
+  "sources": [...]  # Expandable source chunks
+}
+
+GET /api/health
+GET /api/stats  # Basic query stats
+```
+
+### 6.2 Rate Limiting
+- 20 queries per hour per IP (hashed)
+- Return 429 with Icelandic message if exceeded
+
+---
+
+## Phase 7: Frontend (Days 8-9)
+
+### 7.1 Design: Professional/Formal
+- Color scheme: Dark blues (#1a365d), white, subtle grays
+- Typography: Clean serif for legal text (Georgia/Times)
+- Layout: Centered chat area, max-width 800px
+
+### 7.2 Components
+1. **Header**: Logo, "Lögfræðileg leit" title
+2. **Disclaimer banner**: "Til upplýsinga. Staðfestið við opinberar heimildir."
+3. **Chat input**: Text area + submit button
+4. **Answer display**:
+   - Markdown-rendered answer
+   - Collapsible citation sections (click to expand source text)
+   - Confidence indicator
+5. **Loading state**: Spinner during query
+6. **Error states**: Rate limit, validation failure, no results
+
+### 7.3 Icelandic UI Text
+- All interface text in Icelandic
+- Proper character encoding (UTF-8)
+- Support þ, ð, æ, ö characters
+
+---
+
+## Phase 8: Testing (Day 9-10)
+
+### 8.1 Unit Tests
+
+**test_validation.py** (Critical)
+```python
+def test_exact_quote_match_passes():
+    # Quote exists exactly in chunks
+
+def test_modified_quote_fails():
+    # Quote with changed word fails validation
+
+def test_missing_quote_fails():
+    # Fabricated quote fails validation
+
+def test_whitespace_normalization():
+    # Extra spaces shouldn't cause failure
+```
+
+**test_search.py**
+```python
+def test_law_number_lookup():
+    # "33/1944" returns correct law
+
+def test_semantic_search():
+    # Conceptual query returns relevant chunks
+```
+
+**test_ingestion.py**
+```python
+def test_sgml_parsing():
+    # Sample SGML parses correctly
+
+def test_chunking_by_article():
+    # Articles split correctly
+```
+
+### 8.2 Integration Tests
+- End-to-end query flow
+- Validation rejection flow
+- Rate limiting
+
+---
+
+## Phase 9: Deployment (Days 10-11)
+
+### 9.1 Environment Variables
+```
+SUPABASE_URL=
+SUPABASE_KEY=
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+RATE_LIMIT_PER_HOUR=20
+```
+
+### 9.2 Local Development
+- Run FastAPI with uvicorn
+- Connect to Supabase cloud DB
+- Frontend served from /frontend or separate server
+
+### 9.3 Production Deployment (Railway/Fly.io)
+- Dockerfile for FastAPI app
+- Static frontend hosting
+- Environment secrets
+
+---
+
+## Icelandic Language Considerations
+
+### Embeddings
+- OpenAI text-embedding-3-small handles Icelandic reasonably well
+- Tested on multilingual benchmarks
+- Alternative if issues: Cohere multilingual-v3
+
+### Claude's Icelandic
+- Claude 3.5 Sonnet has good Icelandic capability
+- System prompt in Icelandic reinforces language use
+- Test with common legal terms to verify
+
+### Character Handling
+- All files UTF-8 encoded
+- Database columns use TEXT (UTF-8 by default in PostgreSQL)
+- Frontend: `<meta charset="UTF-8">`
+
+---
+
+## Risk Mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| SGML parsing complexity | Use BeautifulSoup + sample files for testing first |
+| Embedding quality for Icelandic | Test with sample queries, have Cohere as backup |
+| Strict validation rejects valid answers | Retry logic with stricter prompting |
+| Claude hallucinating citations | Exact match validation catches all fabrications |
+| API costs | Monitor usage, basic rate limiting |
+
+---
+
+## Verification Checklist
+
+Before considering MVP complete:
+
+- [ ] SGML parser extracts 10+ laws correctly with metadata
+- [ ] Embeddings generated and stored for all chunks
+- [ ] Vector search returns relevant results for test queries
+- [ ] Law number shortcuts work (e.g., "33/1944")
+- [ ] Claude generates answers in Icelandic with citations
+- [ ] Validation rejects answers with invalid quotes
+- [ ] Retry logic works when validation fails
+- [ ] Frontend displays answer with collapsible sources
+- [ ] Rate limiting works
+- [ ] All critical tests pass
+- [ ] Disclaimer displayed
+
+---
+
+## Files to Create
+
+1. `app/main.py` - FastAPI application
+2. `app/config.py` - Settings management
+3. `app/models/schemas.py` - Pydantic models
+4. `app/services/ingestion.py` - SGML parser
+5. `app/services/embedding.py` - OpenAI embeddings
+6. `app/services/search.py` - Vector search
+7. `app/services/chat.py` - Claude integration
+8. `app/services/validation.py` - Citation verification
+9. `app/db/connection.py` - Supabase client
+10. `app/db/queries.py` - Database operations
+11. `app/api/routes.py` - API endpoints
+12. `frontend/index.html` - Chat interface
+13. `frontend/styles.css` - Professional styling
+14. `frontend/app.js` - Frontend logic
+15. `tests/test_validation.py` - Validation tests
+16. `tests/test_search.py` - Search tests
+17. `tests/test_ingestion.py` - Parsing tests
+18. `scripts/ingest_lagasafn.py` - Data ingestion
+19. `requirements.txt` - Dependencies
+20. `.env.example` - Environment template
+
+---
+
+# PART 2: Engineering Doctrine & Hardening
+
+---
+
+## Engineering Doctrine
+
+These 10 principles govern all implementation decisions. When in conflict, earlier principles take precedence.
+
+| # | Principle |
+|---|-----------|
+| 1 | The system must never answer without verifiable evidence from the stored legal corpus. |
+| 2 | Exact citations are mandatory; unverifiable quotes invalidate the entire response. |
+| 3 | When validation fails, the system retries once with stricter constraints, then refuses. |
+| 4 | Correct refusal is preferable to a partially correct answer. |
+| 5 | All legal structure (law numbers, articles, paragraphs) must come from parsed source data, never inferred by the model. |
+| 6 | Text normalization must be deterministic and consistent across ingestion, storage, retrieval, and validation. |
+| 7 | Search must favor recall over confidence, using hybrid methods to avoid false negatives. |
+| 8 | The model may summarize or rephrase, but claims require direct citations. |
+| 9 | System failures must be explicit, auditable, and user-visible, not silent. |
+| 10 | The MVP optimizes for trust and correctness first; usability and speed second. |
+
+---
+
+## Risk Review & Hardening Checklist
+
+### 1. SGML Parsing Risk
+
+**Risk:** Lagasafn SGML is not guaranteed well-formed XML. Silent structural breakage leads to incorrect locators and citation failures.
+
+**Mitigation:**
+
+```python
+# services/ingestion.py
+
+def parse_sgml_to_normalized(raw_sgml: str) -> dict:
+    """
+    Deterministic SGML → normalized JSON conversion.
+    Fails explicitly on structural errors.
+    """
+    # Step 1: Clean SGML quirks (unclosed tags, entities)
+    cleaned = preprocess_sgml(raw_sgml)
+
+    # Step 2: Parse with lenient HTML parser (not strict XML)
+    soup = BeautifulSoup(cleaned, 'html.parser')
+
+    # Step 3: Extract structure into normalized dict
+    law = {
+        "law_number": extract_law_number(soup),  # REQUIRED - fail if missing
+        "title": extract_title(soup),            # REQUIRED
+        "articles": []
+    }
+
+    for article_elem in soup.find_all('grein'):
+        article = {
+            "number": extract_article_number(article_elem),  # REQUIRED
+            "paragraphs": extract_paragraphs(article_elem),
+            "raw_text": article_elem.get_text()
+        }
+
+        # VALIDATION: Article must have number and content
+        if not article["number"] or not article["raw_text"].strip():
+            raise IngestionError(f"Invalid article structure in {law['law_number']}")
+
+        law["articles"].append(article)
+
+    return law
+
+def validate_parsed_law(law: dict) -> ValidationReport:
+    """
+    Structural validation before storage.
+    """
+    errors = []
+
+    if not law.get("law_number"):
+        errors.append("Missing law_number")
+
+    if not law.get("articles"):
+        errors.append("No articles extracted")
+
+    for i, article in enumerate(law.get("articles", [])):
+        if not article.get("number"):
+            errors.append(f"Article {i} missing number")
+        if not article.get("raw_text", "").strip():
+            errors.append(f"Article {article.get('number', i)} has empty text")
+
+    return ValidationReport(
+        valid=len(errors) == 0,
+        errors=errors,
+        article_count=len(law.get("articles", []))
+    )
+```
+
+**Test Requirement:** Parse 5+ real Lagasafn files before proceeding. Fail ingestion if any structural validation fails.
+
+---
+
+### 2. Exact Quote Validation Fragility
+
+**Risk:** String matching fails due to Unicode normalization (NFC/NFD), whitespace variants, non-breaking spaces.
+
+**Mitigation:** Single canonical normalization function used everywhere.
+
+```python
+# services/normalization.py
+
+import unicodedata
+import re
+
+def canonical_normalize(text: str) -> str:
+    """
+    THE ONLY normalization function. Used at:
+    - Ingestion (before storage)
+    - Retrieval (when loading chunks)
+    - Validation (comparing quotes)
+
+    Changes:
+    - NFC Unicode normalization
+    - All whitespace → single space
+    - Strip leading/trailing
+    - Preserve Icelandic characters exactly
+    """
+    if not text:
+        return ""
+
+    # Unicode NFC normalization (canonical composition)
+    text = unicodedata.normalize('NFC', text)
+
+    # Replace all whitespace variants (including \u00A0 non-breaking space)
+    text = re.sub(r'[\s\u00A0\u2000-\u200B\uFEFF]+', ' ', text)
+
+    # Strip
+    text = text.strip()
+
+    return text
+
+# TESTS (must pass before deployment)
+def test_icelandic_characters():
+    assert canonical_normalize("Þórður") == "Þórður"
+    assert canonical_normalize("æðri") == "æðri"
+    assert canonical_normalize("lögin") == "lögin"
+
+def test_unicode_equivalence():
+    # é as single char vs e + combining accent
+    composed = "café"
+    decomposed = "cafe\u0301"
+    assert canonical_normalize(composed) == canonical_normalize(decomposed)
+
+def test_whitespace_variants():
+    assert canonical_normalize("a  b") == "a b"
+    assert canonical_normalize("a\u00A0b") == "a b"  # non-breaking space
+    assert canonical_normalize("a\n\tb") == "a b"
+
+def test_icelandic_legal_text():
+    text = "1. mgr. 12. gr. laga nr. 33/1944"
+    assert canonical_normalize(text) == "1. mgr. 12. gr. laga nr. 33/1944"
+```
+
+**Database Schema Update:**
+```sql
+-- Store normalized text, keep original for display
+ALTER TABLE chunks ADD COLUMN chunk_text_normalized TEXT;
+
+-- Trigger to auto-normalize on insert/update
+CREATE OR REPLACE FUNCTION normalize_chunk_text()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.chunk_text_normalized = canonical_normalize(NEW.chunk_text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+---
+
+### 3. False Negatives Due to Strict Validation
+
+**Risk:** Valid answers rejected due to minor formatting mismatches.
+
+**Mitigation:** Retry with explicit copy-paste instruction before rejection.
+
+```python
+# services/chat.py
+
+STRICT_QUOTE_INSTRUCTION = """
+MIKILVÆGT: Þú VERÐUR að afrita tilvitnanir NÁKVÆMLEGA eins og þær birtast í textanum.
+- Ekki breyta orðaröð
+- Ekki bæta við eða fjarlægja orðum
+- Afritaðu orðrétt, staf fyrir staf
+"""
+
+async def generate_validated_answer(query: str) -> ChatResponse:
+    MAX_RETRIES = 2
+    last_validation_error = None
+
+    for attempt in range(MAX_RETRIES):
+        chunks = await search_chunks(query)
+
+        extra_instruction = STRICT_QUOTE_INSTRUCTION if attempt > 0 else None
+        response = await generate_answer(query, chunks, extra_instruction)
+
+        validation = await validate_citations(response, chunks)
+
+        if validation.passed:
+            return ChatResponse(
+                answer=response.answer,
+                citations=response.citations,
+                confidence=compute_confidence(response, chunks),
+                failure_reason=None
+            )
+
+        last_validation_error = validation.error
+
+    # All retries exhausted - explicit refusal
+    return ChatResponse(
+        answer=None,
+        citations=[],
+        confidence="none",
+        failure_reason="validation_failed",
+        debug_info={"last_error": last_validation_error} if DEBUG_MODE else None
+    )
+```
+
+---
+
+### 4. Search Recall in Icelandic (Hybrid Search)
+
+**Risk:** Vector embeddings alone miss relevant chunks due to Icelandic inflection and legal terminology.
+
+**Mitigation:** Hybrid search combining BM25 keyword + vector, with union (not intersection).
+
+```python
+# services/search.py
+
+async def hybrid_search(query: str, top_k: int = 15) -> List[Chunk]:
+    """
+    Hybrid search favoring recall over precision.
+    Returns union of keyword and semantic results.
+    """
+
+    # 1. Direct law reference lookup (highest priority)
+    law_ref = extract_law_reference(query)
+    if law_ref:
+        direct_chunks = await db.get_chunks_by_law_number(law_ref)
+        if direct_chunks:
+            return direct_chunks[:top_k]
+
+    # 2. Parallel keyword + vector search
+    keyword_results, vector_results = await asyncio.gather(
+        keyword_search(query, top_k=top_k),
+        vector_search(query, top_k=top_k)
+    )
+
+    # 3. Merge with deduplication (union, not intersection)
+    seen_ids = set()
+    merged = []
+
+    # Interleave results, prioritizing keyword matches for exact terms
+    for chunk in keyword_results:
+        if chunk.id not in seen_ids:
+            seen_ids.add(chunk.id)
+            merged.append(chunk)
+
+    for chunk in vector_results:
+        if chunk.id not in seen_ids:
+            seen_ids.add(chunk.id)
+            merged.append(chunk)
+
+    return merged[:top_k]
+
+async def keyword_search(query: str, top_k: int) -> List[Chunk]:
+    """
+    PostgreSQL full-text search with Icelandic stemming fallback.
+    """
+    # Use ts_vector for keyword matching
+    # Fallback to ILIKE for law numbers and article references
+    return await db.execute("""
+        SELECT * FROM chunks
+        WHERE chunk_text_normalized ILIKE ANY(%(patterns)s)
+           OR to_tsvector('simple', chunk_text) @@ plainto_tsquery('simple', %(query)s)
+        ORDER BY ts_rank(to_tsvector('simple', chunk_text), plainto_tsquery('simple', %(query)s)) DESC
+        LIMIT %(limit)s
+    """, {"query": query, "patterns": extract_search_patterns(query), "limit": top_k})
+```
+
+**Database Index for Keyword Search:**
+```sql
+-- Full-text search index
+CREATE INDEX chunks_text_search_idx ON chunks
+USING GIN (to_tsvector('simple', chunk_text));
+```
+
+---
+
+### 5. Locator Construction Ambiguity
+
+**Risk:** Locators drift from actual source structure during parsing.
+
+**Mitigation:** Locators derived ONLY from parsed structure, validated at ingestion.
+
+```python
+# services/ingestion.py
+
+def build_locator(law_number: str, article_number: str, paragraph_number: str = None) -> str:
+    """
+    Deterministic locator construction from parsed fields only.
+    Never infer or guess these values.
+    """
+    if paragraph_number:
+        return f"Lög nr. {law_number} - {article_number}. gr., {paragraph_number}. mgr."
+    return f"Lög nr. {law_number} - {article_number}. gr."
+
+def ingest_chunk(law: dict, article: dict, paragraph: dict = None) -> Chunk:
+    """
+    Chunk creation with mandatory locator validation.
+    """
+    locator = build_locator(
+        law_number=law["law_number"],        # From parser, not LLM
+        article_number=article["number"],     # From parser, not LLM
+        paragraph_number=paragraph["number"] if paragraph else None
+    )
+
+    text = paragraph["text"] if paragraph else article["raw_text"]
+
+    # VALIDATION: Verify locator components exist in source
+    assert law["law_number"] in locator
+    assert article["number"] in locator
+
+    return Chunk(
+        document_id=law["id"],
+        chunk_text=text,
+        chunk_text_normalized=canonical_normalize(text),
+        locator=locator,
+        article_number=article["number"],
+        paragraph_number=paragraph["number"] if paragraph else None
+    )
+```
+
+**LLM Constraint:** The LLM receives locators as read-only metadata. It must use them verbatim in citations.
+
+```python
+# In system prompt
+LOCATOR_INSTRUCTION = """
+TILVITNANASNIÐ:
+- Notaðu NÁKVÆMLEGA locator strenginn sem fylgir hverju chunk
+- Ekki breyta, stytta, eða endurskrifa locator
+- Dæmi: Ef chunk hefur locator "Lög nr. 33/1944 - 1. gr.", notaðu nákvæmlega það
+"""
+```
+
+---
+
+### 6. LLM Overreach Prevention
+
+**Risk:** Model fills gaps with plausible but unsupported legal language.
+
+**Mitigation:** Enforce at prompt level + post-validation.
+
+```python
+# services/chat.py
+
+SYSTEM_PROMPT = """
+Þú ert lögfræðilegur aðstoðarmaður. STRÖNGUSTU REGLUR:
+
+1. ENGA STAÐHÆFINGU án tilvitnunar
+   - Hver lagaleg fullyrðing VERÐUR að hafa [citation] merkingu
+   - Ef þú getur ekki vitnað, EKKI segja það
+
+2. ENGINN GISK
+   - Ef upplýsingar vantar, segðu "Ég finn ekki upplýsingar um þetta í gagnagrunni."
+   - Ekki fylla í eyður með almennri þekkingu
+
+3. TILVITNANAFORM
+   - Notaðu NÁKVÆMAR orðréttar tilvitnanir
+   - Merktu með: [Lög nr. X/XXXX - Y. gr.]
+
+4. TAKMÖRKUÐ SAMANTEKT
+   - Þú mátt draga saman, en hver samantektarsetning VERÐUR að vísa í heimild
+   - "Samkvæmt [citation], þá..." er leyfilegt
+   - "Almennt séð..." án tilvitnunar er BANNAÐ
+
+Ef þú brýtur þessar reglur verður svarið hafnað.
+"""
+
+async def validate_no_unsupported_claims(response: dict, chunks: List[Chunk]) -> bool:
+    """
+    Check that every factual sentence has a citation.
+    """
+    answer = response.get("answer_markdown", "")
+    citations = response.get("citations", [])
+
+    # Simple heuristic: count sentences vs citations
+    sentences = [s.strip() for s in re.split(r'[.!?]', answer) if s.strip()]
+    factual_sentences = [s for s in sentences if not is_meta_sentence(s)]
+
+    # Each factual sentence should reference at least one citation marker
+    for sentence in factual_sentences:
+        if not contains_citation_marker(sentence) and not is_refusal(sentence):
+            return False
+
+    return True
+
+def is_meta_sentence(s: str) -> bool:
+    """Non-factual sentences that don't need citations."""
+    meta_patterns = [
+        r"^Ég finn ekki",
+        r"^Samkvæmt gagnagrunni",
+        r"^Hér eru upplýsingar",
+    ]
+    return any(re.match(p, s, re.IGNORECASE) for p in meta_patterns)
+```
+
+---
+
+### 7. Confidence Scoring (Deterministic)
+
+**Risk:** LLM-generated confidence is unreliable.
+
+**Mitigation:** Compute confidence from objective metrics only.
+
+```python
+# services/validation.py
+
+def compute_confidence(response: dict, chunks: List[Chunk]) -> str:
+    """
+    Deterministic confidence based on:
+    - Number of supporting chunks
+    - Citation coverage
+    - Source agreement
+
+    NOT based on LLM self-assessment.
+    """
+    citations = response.get("citations", [])
+
+    if not citations:
+        return "none"
+
+    # Metric 1: Number of verified citations
+    verified_count = len(citations)
+
+    # Metric 2: Unique sources cited
+    unique_sources = len(set(c["document_id"] for c in citations))
+
+    # Metric 3: Coverage (% of answer with citations)
+    answer_length = len(response.get("answer_markdown", ""))
+    cited_length = sum(len(c.get("quote", "")) for c in citations)
+    coverage_ratio = cited_length / max(answer_length, 1)
+
+    # Scoring
+    if verified_count >= 3 and coverage_ratio > 0.3:
+        return "high"
+    elif verified_count >= 1 and coverage_ratio > 0.1:
+        return "medium"
+    else:
+        return "low"
+```
+
+**Frontend Display:** Show confidence as factual indicator, not quality judgment.
+```
+high   → "Byggt á 3+ staðfestum heimildum"
+medium → "Byggt á 1-2 staðfestum heimildum"
+low    → "Takmarkaðar heimildir fundust"
+none   → "Engar heimildir fundust"
+```
+
+---
+
+### 8. Logging vs Privacy Balance
+
+**Mitigation:** Structured logging with no PII, short retention, disable flag.
+
+```python
+# services/logging.py
+
+import hashlib
+from datetime import datetime, timedelta
+
+class AuditLogger:
+    def __init__(self, enabled: bool = True, retention_days: int = 7):
+        self.enabled = enabled
+        self.retention_days = retention_days
+
+    def log_query(self, query: str, response: dict, validation_result: dict, ip: str = None):
+        if not self.enabled:
+            return
+
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "query_hash": hashlib.sha256(query.encode()).hexdigest()[:16],  # Not full query
+            "query_length": len(query),
+            "response_type": "success" if response.get("answer") else "refusal",
+            "citation_count": len(response.get("citations", [])),
+            "validation_passed": validation_result.get("passed"),
+            "validation_error_type": validation_result.get("error_type"),  # Not full error
+            "ip_hash": hashlib.sha256(ip.encode()).hexdigest()[:8] if ip else None,
+            "retry_count": response.get("retry_count", 0)
+        }
+
+        # Store in DB with auto-cleanup
+        await db.insert_log(log_entry)
+
+    async def cleanup_old_logs(self):
+        """Run daily to enforce retention."""
+        cutoff = datetime.utcnow() - timedelta(days=self.retention_days)
+        await db.execute("DELETE FROM query_logs WHERE timestamp < %s", [cutoff])
+
+# Config
+ENABLE_LOGGING = os.getenv("ENABLE_QUERY_LOGGING", "true").lower() == "true"
+LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "7"))
+```
+
+**What is NOT logged:**
+- Full query text (only hash + length)
+- Full response text
+- User IP (only salted hash prefix)
+- Any session identifiers
+
+---
+
+### 9. Failure UX (Explicit Error States)
+
+**Mitigation:** Distinct, user-visible error messages for each failure type.
+
+```python
+# models/schemas.py
+
+class FailureReason(str, Enum):
+    AMBIGUOUS_QUERY = "ambiguous_query"
+    NO_RELEVANT_DATA = "no_relevant_data"
+    VALIDATION_FAILED = "validation_failed"
+    RATE_LIMITED = "rate_limited"
+    INTERNAL_ERROR = "internal_error"
+
+FAILURE_MESSAGES = {
+    FailureReason.AMBIGUOUS_QUERY: {
+        "title": "Spurningin er of almenn",
+        "message": "Vinsamlegast tilgreindu nánar hvað þú leitar að. Dæmi: 'Hvað segir 12. gr. laga nr. 33/1944?'",
+        "suggestion": "Reyndu að nefna tiltekna löggjöf eða lagalegt hugtak."
+    },
+    FailureReason.NO_RELEVANT_DATA: {
+        "title": "Engar heimildir fundust",
+        "message": "Ég fann engar viðeigandi upplýsingar í lagagagnagrunni um þessa spurningu.",
+        "suggestion": "Athugaðu hvort spurningin varðar íslensk lög sem eru í gagnagrunni."
+    },
+    FailureReason.VALIDATION_FAILED: {
+        "title": "Ekki tókst að staðfesta svar",
+        "message": "Kerfið gat ekki staðfest að svarið byggist á nákvæmum heimildum. Svar var hafnað til öryggis.",
+        "suggestion": "Reyndu að orða spurninguna á annan hátt."
+    },
+    FailureReason.RATE_LIMITED: {
+        "title": "Of margar fyrirspurnir",
+        "message": "Þú hefur sent of margar fyrirspurnir. Vinsamlegast bíddu í smástund.",
+        "suggestion": None
+    },
+    FailureReason.INTERNAL_ERROR: {
+        "title": "Kerfisvilla",
+        "message": "Óvænt villa kom upp. Vinsamlegast reyndu aftur síðar.",
+        "suggestion": "Ef vandamálið endurtekur sig, hafðu samband við kerfisstjóra."
+    }
+}
+```
+
+**Frontend Error Display:**
+```html
+<div class="error-container error-{failure_type}">
+    <h3 class="error-title">{title}</h3>
+    <p class="error-message">{message}</p>
+    {#if suggestion}
+    <p class="error-suggestion">💡 {suggestion}</p>
+    {/if}
+</div>
+```
+
+---
+
+### 10. Silent Corruption Prevention (Ingestion Sanity Checks)
+
+**Mitigation:** Automated validation during and after ingestion.
+
+```python
+# scripts/ingest_lagasafn.py
+
+class IngestionValidator:
+    def __init__(self):
+        self.stats = {
+            "laws_processed": 0,
+            "laws_failed": 0,
+            "chunks_created": 0,
+            "empty_chunks": 0,
+            "validation_errors": []
+        }
+
+    def validate_law(self, law: dict) -> bool:
+        errors = []
+
+        # Check 1: Has required fields
+        if not law.get("law_number"):
+            errors.append("Missing law_number")
+        if not law.get("title"):
+            errors.append("Missing title")
+
+        # Check 2: Has at least 1 article
+        if len(law.get("articles", [])) == 0:
+            errors.append("No articles found")
+
+        # Check 3: No empty articles
+        for i, article in enumerate(law.get("articles", [])):
+            if not article.get("raw_text", "").strip():
+                errors.append(f"Empty article at index {i}")
+
+        if errors:
+            self.stats["validation_errors"].append({
+                "law": law.get("law_number", "unknown"),
+                "errors": errors
+            })
+            return False
+
+        return True
+
+    def post_ingestion_checks(self):
+        """Run after full ingestion to detect corruption."""
+        checks = []
+
+        # Check 1: Minimum law count
+        law_count = db.count("documents")
+        if law_count < 100:  # Lagasafn should have hundreds of laws
+            checks.append(f"WARN: Only {law_count} laws ingested (expected 100+)")
+
+        # Check 2: No orphan chunks
+        orphan_count = db.execute("""
+            SELECT COUNT(*) FROM chunks c
+            LEFT JOIN documents d ON c.document_id = d.id
+            WHERE d.id IS NULL
+        """)
+        if orphan_count > 0:
+            checks.append(f"ERROR: {orphan_count} orphan chunks found")
+
+        # Check 3: Embedding completeness
+        missing_embeddings = db.execute("""
+            SELECT COUNT(*) FROM chunks WHERE embedding IS NULL
+        """)
+        if missing_embeddings > 0:
+            checks.append(f"ERROR: {missing_embeddings} chunks missing embeddings")
+
+        # Check 4: Random spot-check
+        random_chunks = db.execute("SELECT * FROM chunks ORDER BY RANDOM() LIMIT 5")
+        for chunk in random_chunks:
+            if len(chunk.chunk_text.strip()) < 10:
+                checks.append(f"WARN: Suspiciously short chunk: {chunk.id}")
+            if not chunk.locator:
+                checks.append(f"ERROR: Chunk {chunk.id} missing locator")
+
+        return checks
+
+    def generate_report(self) -> str:
+        return f"""
+INGESTION REPORT
+================
+Laws processed: {self.stats['laws_processed']}
+Laws failed: {self.stats['laws_failed']}
+Chunks created: {self.stats['chunks_created']}
+Empty chunks skipped: {self.stats['empty_chunks']}
+
+Validation errors:
+{json.dumps(self.stats['validation_errors'], indent=2)}
+
+Post-ingestion checks:
+{chr(10).join(self.post_ingestion_checks())}
+"""
+```
+
+**Run as CI check:**
+```bash
+# In CI/CD pipeline
+python scripts/ingest_lagasafn.py --validate-only
+# Exit code 1 if any ERROR-level issues found
+```
+
+---
+
+## Updated Verification Checklist
+
+Before MVP launch, ALL must pass:
+
+### Ingestion
+- [ ] SGML parser handles 5+ real Lagasafn files without errors
+- [ ] Validation report shows 0 ERROR-level issues
+- [ ] Random spot-check of 10 chunks shows correct locators
+- [ ] All chunks have embeddings (no NULLs)
+
+### Normalization
+- [ ] `test_icelandic_characters` passes
+- [ ] `test_unicode_equivalence` passes
+- [ ] `test_whitespace_variants` passes
+- [ ] Same normalization function used in all 4 places (ingest, store, retrieve, validate)
+
+### Search
+- [ ] Hybrid search returns results for inflected Icelandic terms
+- [ ] Law number shortcuts work ("33/1944", "lög nr. 33/1944")
+- [ ] Vector search alone misses some results that keyword finds (confirming hybrid value)
+
+### Validation
+- [ ] Exact quote match passes for real chunk text
+- [ ] Modified quote (1 word changed) fails validation
+- [ ] Fabricated quote fails validation
+- [ ] Retry with stricter prompt recovers some failures
+
+### LLM Behavior
+- [ ] Response with uncited claim is rejected
+- [ ] Locators in response match locators from chunks exactly
+- [ ] Ambiguous query triggers clarification request
+- [ ] Missing data triggers explicit refusal
+
+### Confidence
+- [ ] Confidence is computed from citation count/coverage, not LLM
+- [ ] "high" requires 3+ citations with >30% coverage
+- [ ] UI shows factual explanation, not quality judgment
+
+### Error UX
+- [ ] Each failure type shows distinct Icelandic message
+- [ ] Error messages include actionable suggestions
+- [ ] Rate limit error shows wait instruction
+
+### Logging
+- [ ] Logs contain no full query text
+- [ ] Logs contain no raw IP addresses
+- [ ] Log retention cleanup runs successfully
+- [ ] Logging can be disabled via env var
+
+### Security
+- [ ] Rate limiting enforced (test with 25 rapid requests)
+- [ ] No SQL injection in search (test with `'; DROP TABLE`)
+- [ ] UTF-8 encoding verified end-to-end

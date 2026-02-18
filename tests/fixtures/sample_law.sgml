@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log>
+    <nr>33</nr>
+    <ar>1944</ar>
+    <heiti>Lög um þjóðfána Íslendinga og ríkisskjaldarmerkið</heiti>
+
+    <grein>
+        <nr>1</nr>
+        <mgr>
+            <nr>1</nr>
+            Þjóðfáni Íslendinga er himinblár með mjóum hvítum krossi, rauðum að innanverðu.
+            Armar krossins ná að jöðrum fánans.
+        </mgr>
+        <mgr>
+            <nr>2</nr>
+            Breidd hvíta krossarmsins skal vera 1/7 af breidd fánans, en breidd hins rauða 1/7 af breidd fánans.
+        </mgr>
+    </grein>
+
+    <grein>
+        <nr>2</nr>
+        <mgr>
+            <nr>1</nr>
+            Stærðarhlutföll fánans skulu vera þannig, að breiddin sé 18/25 af lengdinni.
+        </mgr>
+    </grein>
+
+    <grein>
+        <nr>3</nr>
+        <mgr>
+            <nr>1</nr>
+            Ríkisskjaldarmerkið er kórónu­skjöldur, blátt höfuðsvið og í því fjögur landvættir á krossi.
+        </mgr>
+    </grein>
+</log>
