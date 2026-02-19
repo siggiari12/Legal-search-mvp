@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Generator
 
 from dotenv import load_dotenv
-from openai import OpenAI, RateLimitError
+from openai import OpenAI, BadRequestError, RateLimitError
 from supabase import create_client
 from tqdm import tqdm
 
@@ -33,6 +33,10 @@ BATCH_SIZE      = 100
 TABLE_NAME      = "documents"
 DEFAULT_INPUT   = "data/Processed/chunks_laws.jsonl"
 MAX_RETRIES     = 6   # max wait: 1+2+4+8+16+32 = 63 s
+# text-embedding-3-small: 8191-token context window.
+# Measured ratio for Icelandic legal text: ~2.23 chars/token.
+# 16 000 chars ≈ 7 175 tokens — 12% below the hard limit.
+MAX_CHARS       = 16_000
 
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -85,13 +89,25 @@ def load_chunks(path: Path, limit: int | None) -> Generator[dict, None, None]:
 def embed_batch(client: OpenAI, texts: list[str]) -> list[list[float]]:
     """
     Embed a list of texts using text-embedding-3-small.
+
+    Texts exceeding MAX_CHARS are truncated before sending to stay within
+    the model's 8 191-token context window.
     Retries on RateLimitError with exponential backoff (up to MAX_RETRIES).
     """
+    # Truncate any texts that would exceed the token limit
+    safe = []
+    for t in texts:
+        if len(t) > MAX_CHARS:
+            tqdm.write(f"  [truncate] text truncated from {len(t)} to {MAX_CHARS} chars")
+            safe.append(t[:MAX_CHARS])
+        else:
+            safe.append(t)
+
     for attempt in range(MAX_RETRIES):
         try:
             response = client.embeddings.create(
                 model=EMBEDDING_MODEL,
-                input=texts,
+                input=safe,
             )
             return [item.embedding for item in response.data]
         except RateLimitError:
@@ -103,6 +119,10 @@ def embed_batch(client: OpenAI, texts: list[str]) -> list[list[float]]:
                 f"(attempt {attempt + 1}/{MAX_RETRIES})"
             )
             time.sleep(wait)
+        except BadRequestError as e:
+            # Should not occur after truncation, but surface clearly if it does
+            tqdm.write(f"  [bad request] {e}")
+            raise
 
 
 # ── Insertion ─────────────────────────────────────────────────────────────────
