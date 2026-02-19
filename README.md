@@ -181,3 +181,16 @@ Returns database and service health status.
 ## License
 
 Private - All rights reserved.
+
+### Handling Legacy Encoding (Windows-1252)
+
+The official Alþingi SGML snapshot is encoded in Windows-1252 rather than UTF-8.
+
+This initially caused corrupted Icelandic characters (þ, ð, æ) during parsing.
+The ingestion pipeline now:
+
+- Detects and reads SGML files using cp1252
+- Converts content to clean UTF-8 internally
+- Outputs normalized UTF-8 JSON
+
+This ensures reliable text processing and prevents silent data corruption in downstream embeddings and retrieval.

@@ -1,422 +1,542 @@
 """
-SGML Parser for Lagasafn (Icelandic Law Collection)
+SGML Parser for Lagasafn (Icelandic Law Collection) — 156b release
 
-This module parses Lagasafn SGML files into structured data.
-It extracts:
-- Law metadata (number, year, title)
-- Articles (greinar)
-- Paragraphs (málsgreinar) where available
+Structure discovered by inspecting real files (not assumed):
 
-IMPORTANT: SGML parsing is inherently risky. This parser:
-- Uses BeautifulSoup with lenient HTML parser (not strict XML)
-- Fails loudly on structural errors
-- Keeps locators conservative (law + article only) rather than guessing
-- Applies canonicalize() to all text
+  Encoding:  Windows-1252 (cp1252) — open files with that encoding.
+  Tags:      BeautifulSoup html.parser lowercases all tag names.
 
-Usage:
-    parser = SGMLParser()
-    parsed_law = parser.parse(sgml_content)
+  HEAD (metadata):
+    <lyr>  YYYY           year of enactment    (real format)
+    <lno>  N              law number, may be empty for ancient laws (real)
+    <ldt>  text           publication date text (real)
+    <title> text          law title             (real)
+    <ar>   YYYY           year                  (fixture / alt format)
+    <heiti> text          title                 (fixture / alt format)
+
+  BODY — three structural patterns:
+
+  Pattern A  Standard modern law (post-~1900):
+    <body>
+      <chapter>?                    optional grouping
+        <chnm1><chka>I.</chka>      chapter name
+        <gr>                        article (grein)
+          <gn>1. gr.</gn>           article header
+          <mgr>paragraph text</mgr> one or more paragraphs
+            <fnn>1)</fnn>           inline footnote ref  ← STRIP
+          <fnpart>…</fnpart>        footnote block       ← STRIP
+
+  Pattern B  Medieval compilations (Jónsbók 1281, etc.):
+    <body>
+      <part>?
+        <chapter>
+          <chnm1><chka>chapter name</chka>
+          <p>text…</p>              no <gr> or <mgr>, prose in <p>
+
+  Pattern C  Very short / very old:
+    Just a <p> in <body>, no article structure.
+
+  Additionally, test fixtures use:
+    <log> root, <nr> law-number, <ar> year, <heiti> title,
+    <grein> article, <nr> article-number, <mgr><nr> para-number, text.
 """
 
+import copy
+import json
 import re
 import warnings
-from typing import List, Optional, Tuple, Dict
+from pathlib import Path
+from typing import List, Optional
+
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from app.services.canonicalize import canonicalize
 from app.models.schemas import ParsedArticle, ParsedLaw
 
 
-class SGMLParseError(Exception):
-    """Raised when SGML parsing fails."""
-    pass
+SCHEMA_VERSION = "1"
+
+# Tags whose content is excluded from article/paragraph text.
+# - fnpart / fnn : footnote definitions and inline reference markers
+# - nr           : paragraph-number annotations in fixture format (<mgr><nr>1</nr>text)
+#                  Safe to exclude from body text because real SGML never uses <nr>
+#                  inside <mgr> or article prose.
+_EXCLUDE_TAGS = frozenset({"fnpart", "fnn", "nr"})
 
 
-class SGMLParser:
+# ── Text helpers ──────────────────────────────────────────────────────────────
+
+def _clean_text(tag) -> str:
     """
-    Parser for Lagasafn SGML files.
-
-    Supports multiple SGML tag conventions found in Lagasafn:
-    - <log> or <law> for law container
-    - <nr> for law number
-    - <ar> for year
-    - <heiti> or <title> for title
-    - <grein> or <gr> for article
-    - <mgr> for paragraph
+    Extract clean text from a BS4 tag without mutating the original tree.
+    Strips excluded markup, then normalises whitespace.
     """
-
-    # Regex patterns for extracting law number/year from text
-    LAW_NUMBER_PATTERN = re.compile(r'(\d+)[./](\d{4})')
-    YEAR_PATTERN = re.compile(r'\b(19\d{2}|20\d{2})\b')
-    NUMBER_PATTERN = re.compile(r'^\s*(\d+)\s*$')
-
-    def __init__(self, strict: bool = False):
-        """
-        Initialize parser.
-
-        Args:
-            strict: If True, raise errors on any parsing issue.
-                   If False, try to recover and log warnings.
-        """
-        self.strict = strict
-        self.warnings: List[str] = []
-
-    def parse(self, sgml_content: str, source_info: str = "unknown") -> ParsedLaw:
-        """
-        Parse SGML content into a structured ParsedLaw object.
-
-        Args:
-            sgml_content: Raw SGML string
-            source_info: Identifier for error messages (e.g., filename)
-
-        Returns:
-            ParsedLaw object with extracted data
-
-        Raises:
-            SGMLParseError: If parsing fails and strict mode is enabled
-        """
-        self.warnings = []
-
-        # Preprocess SGML for common issues
-        cleaned = self._preprocess_sgml(sgml_content)
-
-        # Parse with lenient HTML parser (intentional for malformed SGML)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-            soup = BeautifulSoup(cleaned, 'html.parser')
-
-        # Extract law metadata
-        law_number, law_year = self._extract_law_number_year(soup, source_info)
-        title = self._extract_title(soup, law_number, law_year)
-
-        # Extract articles
-        articles = self._extract_articles(soup, source_info)
-
-        # Build full text from articles
-        full_text = self._build_full_text(title, articles)
-
-        # Validate minimum requirements
-        self._validate_parsed_law(law_number, law_year, title, articles, source_info)
-
-        return ParsedLaw(
-            law_number=law_number,
-            law_year=law_year,
-            title=canonicalize(title),
-            articles=articles,
-            full_text=canonicalize(full_text),
-            metadata={
-                "source_info": source_info,
-                "parser_warnings": self.warnings,
-            }
-        )
-
-    def _preprocess_sgml(self, content: str) -> str:
-        """
-        Preprocess SGML to handle common issues.
-
-        - Converts HTML entities
-        - Handles unclosed tags (best effort)
-        """
-        # Replace common SGML entities
-        content = content.replace('&apos;', "'")
-        content = content.replace('&quot;', '"')
-
-        # Some Lagasafn files use <gr.> instead of <gr>
-        content = re.sub(r'<gr\.>', '<gr>', content, flags=re.IGNORECASE)
-        content = re.sub(r'</gr\.>', '</gr>', content, flags=re.IGNORECASE)
-
-        return content
-
-    def _extract_law_number_year(
-        self,
-        soup: BeautifulSoup,
-        source_info: str
-    ) -> Tuple[str, str]:
-        """
-        Extract law number and year from SGML.
-
-        Tries multiple strategies:
-        1. Look for <nr> and <ar> tags
-        2. Look for combined format in tag text (e.g., "33/1944")
-        3. Parse from title or header text
-        """
-        law_number = None
-        law_year = None
-
-        # Strategy 1: Look for dedicated tags
-        nr_tag = soup.find(['nr', 'number', 'lognr'])
-        ar_tag = soup.find(['ar', 'year', 'artal'])
-
-        if nr_tag and nr_tag.get_text(strip=True):
-            text = nr_tag.get_text(strip=True)
-            # May be "33" or "33/1944"
-            match = self.LAW_NUMBER_PATTERN.search(text)
-            if match:
-                law_number, law_year = match.groups()
-            else:
-                num_match = self.NUMBER_PATTERN.match(text)
-                if num_match:
-                    law_number = num_match.group(1)
-
-        if ar_tag and ar_tag.get_text(strip=True):
-            text = ar_tag.get_text(strip=True)
-            year_match = self.YEAR_PATTERN.search(text)
-            if year_match:
-                law_year = year_match.group(1)
-
-        # Strategy 2: Look in header/title for "nr. X/YYYY" pattern
-        if not (law_number and law_year):
-            header_tags = soup.find_all(['heiti', 'title', 'header', 'h1', 'log'])
-            for tag in header_tags:
-                text = tag.get_text()
-                match = self.LAW_NUMBER_PATTERN.search(text)
-                if match:
-                    law_number = law_number or match.group(1)
-                    law_year = law_year or match.group(2)
-                    break
-
-        # Strategy 3: Search entire document
-        if not (law_number and law_year):
-            full_text = soup.get_text()
-            match = self.LAW_NUMBER_PATTERN.search(full_text[:500])  # Check first 500 chars
-            if match:
-                law_number = law_number or match.group(1)
-                law_year = law_year or match.group(2)
-                self.warnings.append(f"Law number extracted from body text: {match.group()}")
-
-        # Validate results
-        if not law_number:
-            if self.strict:
-                raise SGMLParseError(f"Could not extract law number from {source_info}")
-            law_number = "0"
-            self.warnings.append("Law number not found, using '0'")
-
-        if not law_year:
-            if self.strict:
-                raise SGMLParseError(f"Could not extract law year from {source_info}")
-            law_year = "0000"
-            self.warnings.append("Law year not found, using '0000'")
-
-        return law_number, law_year
-
-    def _extract_title(
-        self,
-        soup: BeautifulSoup,
-        law_number: str,
-        law_year: str
-    ) -> str:
-        """
-        Extract law title from SGML.
-        """
-        # Try dedicated title tags
-        title_tags = soup.find_all(['heiti', 'title', 'fyrirsogn'])
-        for tag in title_tags:
-            text = tag.get_text(strip=True)
-            if text and len(text) > 5:  # Skip very short "titles"
-                return text
-
-        # Try header tags
-        header_tags = soup.find_all(['h1', 'h2', 'header'])
-        for tag in header_tags:
-            text = tag.get_text(strip=True)
-            if text and len(text) > 10:
-                return text
-
-        # Fallback: use law reference
-        self.warnings.append("Title not found, using law reference as title")
-        return f"Lög nr. {law_number}/{law_year}"
-
-    def _extract_articles(
-        self,
-        soup: BeautifulSoup,
-        source_info: str
-    ) -> List[ParsedArticle]:
-        """
-        Extract articles (greinar) from SGML.
-        """
-        articles = []
-
-        # Find article containers
-        article_tags = soup.find_all(['grein', 'gr', 'article', 'art'])
-
-        for i, tag in enumerate(article_tags):
-            article_num = self._extract_article_number(tag, i + 1)
-            article_text = tag.get_text(separator=' ', strip=True)
-
-            if not article_text:
-                self.warnings.append(f"Empty article {article_num} skipped")
-                continue
-
-            # Extract paragraphs if available
-            paragraphs = self._extract_paragraphs(tag)
-
-            articles.append(ParsedArticle(
-                number=article_num,
-                text=canonicalize(article_text),
-                paragraphs=paragraphs
-            ))
-
-        # If no article tags found, try to split by pattern
-        if not articles:
-            articles = self._split_by_article_pattern(soup, source_info)
-
-        return articles
-
-    def _extract_article_number(self, tag, fallback_index: int) -> str:
-        """
-        Extract article number from a tag.
-        """
-        # Check for nr attribute
-        nr_attr = tag.get('nr') or tag.get('number') or tag.get('num')
-        if nr_attr:
-            return str(nr_attr)
-
-        # Check for nested <nr> tag
-        nr_tag = tag.find('nr')
-        if nr_tag:
-            text = nr_tag.get_text(strip=True)
-            num_match = re.search(r'(\d+)', text)
-            if num_match:
-                return num_match.group(1)
-
-        # Check text beginning for "X. gr." pattern
-        text = tag.get_text(strip=True)[:50]
-        match = re.search(r'^(\d+)\s*\.?\s*gr', text, re.IGNORECASE)
-        if match:
-            return match.group(1)
-
-        # Fallback to index
-        return str(fallback_index)
-
-    def _extract_paragraphs(self, article_tag) -> List[Dict[str, str]]:
-        """
-        Extract paragraphs (málsgreinar) from an article.
-        """
-        paragraphs = []
-
-        mgr_tags = article_tag.find_all(['mgr', 'malsgrein', 'para', 'p'])
-
-        for i, tag in enumerate(mgr_tags):
-            text = tag.get_text(separator=' ', strip=True)
-            if text:
-                paragraphs.append({
-                    "number": str(i + 1),
-                    "text": canonicalize(text)
-                })
-
-        return paragraphs
-
-    def _split_by_article_pattern(
-        self,
-        soup: BeautifulSoup,
-        source_info: str
-    ) -> List[ParsedArticle]:
-        """
-        Fallback: split text by "X. gr." pattern when no article tags exist.
-        """
-        full_text = soup.get_text()
-
-        # Pattern: number followed by ". gr" (article marker in Icelandic)
-        pattern = re.compile(r'(\d+)\s*\.\s*gr\.?', re.IGNORECASE)
-
-        articles = []
-        matches = list(pattern.finditer(full_text))
-
-        if not matches:
-            # No article structure found - treat entire text as single chunk
-            self.warnings.append("No article structure found, treating as single article")
-            articles.append(ParsedArticle(
-                number="1",
-                text=canonicalize(full_text),
-                paragraphs=[]
-            ))
-            return articles
-
-        for i, match in enumerate(matches):
-            article_num = match.group(1)
-            start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-
-            article_text = full_text[start:end].strip()
-            if article_text:
-                articles.append(ParsedArticle(
-                    number=article_num,
-                    text=canonicalize(article_text),
-                    paragraphs=[]
-                ))
-
-        return articles
-
-    def _build_full_text(self, title: str, articles: List[ParsedArticle]) -> str:
-        """
-        Build full document text from title and articles.
-        """
-        parts = [title, ""]
-
-        for article in articles:
-            parts.append(f"{article.number}. gr.")
-            parts.append(article.text)
-            parts.append("")
-
-        return "\n".join(parts)
-
-    def _validate_parsed_law(
-        self,
-        law_number: str,
-        law_year: str,
-        title: str,
-        articles: List[ParsedArticle],
-        source_info: str
-    ) -> None:
-        """
-        Validate parsed law meets minimum requirements.
-        """
-        errors = []
-
-        if not law_number or law_number == "0":
-            errors.append("Invalid law number")
-
-        if not law_year or law_year == "0000":
-            errors.append("Invalid law year")
-
-        if not title:
-            errors.append("Empty title")
-
-        if not articles:
-            errors.append("No articles extracted")
-
-        # Check for empty articles
-        empty_articles = [a for a in articles if not a.text.strip()]
-        if empty_articles:
-            errors.append(f"{len(empty_articles)} empty articles found")
-
-        if errors and self.strict:
-            raise SGMLParseError(f"Validation failed for {source_info}: {', '.join(errors)}")
-
-        for error in errors:
-            self.warnings.append(error)
-
+    t = copy.deepcopy(tag)
+    for name in _EXCLUDE_TAGS:
+        for elem in t.find_all(name):
+            elem.decompose()
+    raw = t.get_text(separator=" ")
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def _tag_text(parent, *names: str) -> str:
+    """Return the text of the first matching tag found in *parent*, or ''."""
+    for name in names:
+        found = parent.find(name)
+        if found:
+            return found.get_text(strip=True)
+    return ""
+
+
+# ── Metadata extraction ───────────────────────────────────────────────────────
+
+def _extract_metadata(
+    soup: BeautifulSoup, source_file: str
+) -> tuple[str, str, str, str, List[str]]:
+    """
+    Return (law_number, law_year, title, publication_date, warnings).
+
+    Tries the real 156b format first (lno / lyr / title / ldt),
+    then the fixture / alt format (nr / ar / heiti).
+    Falls back to filename-derived values when tags are absent or empty.
+    """
+    warn: List[str] = []
+    head = soup.find("head")
+    search_root = head if head else soup
+
+    # Year: <lyr> (real) or <ar> (fixture)
+    law_year = _tag_text(search_root, "lyr", "ar")
+
+    # Number: <lno> (real) or <nr> that is NOT inside an article tag (fixture)
+    lno_tag = search_root.find("lno")
+    if lno_tag is not None:
+        law_number = lno_tag.get_text(strip=True)
+    else:
+        # Fixture format: the law-number <nr> is a near-root child, not inside
+        # <gr> / <grein> / <mgr>.  BeautifulSoup.find() returns the first
+        # occurrence in document order; for well-formed fixtures that is the
+        # law-number element.
+        nr_tag = soup.find("nr")
+        if nr_tag and nr_tag.parent and nr_tag.parent.name not in (
+            "gr", "grein", "mgr", "lfrv", "saga"
+        ):
+            law_number = nr_tag.get_text(strip=True)
+        else:
+            law_number = ""
+
+    # Title: <title> (real) or <heiti> (fixture)
+    title = _tag_text(search_root, "title", "heiti")
+
+    # Publication date: <ldt> (real only)
+    publication_date = _tag_text(search_root, "ldt")
+
+    # Fill gaps from filename: first 4 chars = year, rest = number
+    stem = Path(source_file).name.split(".")[0]  # "1944033" from "1944033.sgml"
+    if not law_year and len(stem) >= 4:
+        law_year = stem[:4]
+        warn.append(f"year inferred from filename: {law_year}")
+    if not law_number and len(stem) > 4:
+        n = stem[4:].lstrip("0")
+        law_number = n if n else ""
+        if law_number:
+            warn.append(f"law_number inferred from filename: {law_number}")
+
+    return law_number, law_year, title, publication_date, warn
+
+
+def _build_law_ref(
+    law_number: str, law_year: str, title: str, warnings_list: List[str]
+) -> str:
+    """Build the canonical law-reference string (e.g. '33/1944')."""
+    if law_number and law_number not in ("0", ""):
+        return f"{law_number}/{law_year}"
+    # Ancient law without a formal number
+    safe = re.sub(r"\s+", "_", title)[:40]
+    warnings_list.append("no formal law number — using title-based reference")
+    return f"[{safe}]/{law_year}"
+
+
+# ── Locator construction ──────────────────────────────────────────────────────
 
 def build_locator(
     law_number: str,
     law_year: str,
     article_number: Optional[str] = None,
-    paragraph_number: Optional[str] = None
+    paragraph_number: Optional[str] = None,
 ) -> str:
     """
-    Build a locator string for a chunk.
+    Build a locator string from explicit number + year components.
 
-    Format: "Lög nr. {number}/{year} - {article}. gr., {paragraph}. mgr."
+    Format:  "Lög nr. {N}/{YYYY}"
+             "Lög nr. {N}/{YYYY} - {art}. gr."
+             "Lög nr. {N}/{YYYY} - {art}. gr., {para}. mgr."
 
-    IMPORTANT: Locators are built ONLY from parsed structure.
-    Never infer or guess article/paragraph numbers.
+    Kept for backward compatibility with the ingestion pipeline.
     """
     base = f"Lög nr. {law_number}/{law_year}"
-
     if article_number:
         base += f" - {article_number}. gr."
-
         if paragraph_number:
             base += f", {paragraph_number}. mgr."
-
     return base
+
+
+def _loc(
+    law_ref: str,
+    art_num: Optional[str] = None,
+    para_num: Optional[str] = None,
+) -> str:
+    """Build locator from an already-computed law_reference string."""
+    base = f"Lög nr. {law_ref}"
+    if art_num:
+        base += f" - {art_num}. gr."
+        if para_num:
+            base += f", {para_num}. mgr."
+    return base
+
+
+# ── Chapter helpers ───────────────────────────────────────────────────────────
+
+def _chapter_label(chapter_tag) -> Optional[str]:
+    """Return the chapter name from a <chapter> tag, or None."""
+    chnm = chapter_tag.find("chnm1")
+    if not chnm:
+        return None
+    chka = chnm.find("chka")
+    label = (chka or chnm).get_text(separator=" ", strip=True)
+    return label or None
+
+
+def _chapter_ancestor(tag) -> Optional[str]:
+    """Walk up the tree and return the nearest chapter name, or None."""
+    for anc in tag.parents:
+        if anc.name == "chapter":
+            return _chapter_label(anc)
+        if anc.name in ("body", "law", "log"):
+            break
+    return None
+
+
+# ── Article number extraction ─────────────────────────────────────────────────
+
+def _article_number(article_tag) -> Optional[str]:
+    """
+    Extract the article number from a <gr> or <grein> tag.
+
+    Tries <gn> first (real format: "1. gr." → "1"),
+    then <nr> as a direct child (fixture format: <nr>1</nr>).
+    Returns None if no number can be found.
+    """
+    # Real format: <gn>1. gr.</gn> or amended <gn>[30. gr.]</gn>
+    gn = article_tag.find("gn")
+    if gn:
+        m = re.match(r"^\[*(\d+)", gn.get_text(strip=True))
+        if m:
+            return m.group(1)
+
+    # Fixture format: <nr>N</nr> as a direct child of the article tag
+    for child in article_tag.children:
+        if getattr(child, "name", None) == "nr":
+            m = re.match(r"^(\d+)", child.get_text(strip=True))
+            if m:
+                return m.group(1)
+
+    return None
+
+
+# ── Paragraph extraction ──────────────────────────────────────────────────────
+
+def _paragraphs(article_tag, law_ref: str, art_num: str) -> List[dict]:
+    """
+    Extract paragraphs from an article tag.
+
+    Precedence:
+      1. <mgr> tags  (real format and fixture format)
+      2. <p> tags    (medieval format, e.g. Jónsbók)
+      3. Full article text minus the article-number tag (fallback)
+    """
+    mgr_tags = article_tag.find_all("mgr")
+    if mgr_tags:
+        result = []
+        para_num = 0
+        for mgr in mgr_tags:
+            t = _clean_text(mgr)
+            if t:
+                para_num += 1
+                result.append(
+                    {
+                        "number": str(para_num),
+                        "text": t,
+                        "locator": _loc(law_ref, art_num, str(para_num)),
+                    }
+                )
+        return result
+
+    p_tags = article_tag.find_all("p")
+    if p_tags:
+        # For medieval laws, include any article sub-heading (<h2>) as a
+        # prefix to the first paragraph so it is searchable.
+        heading_parts = [
+            _clean_text(h)
+            for h in article_tag.find_all(["h2", "h3", "h4", "h5", "h6"])
+            if _clean_text(h)
+        ]
+        heading = " ".join(heading_parts)
+
+        result = []
+        para_num = 0
+        for i, p in enumerate(p_tags):
+            t = _clean_text(p)
+            if t:
+                para_num += 1
+                if i == 0 and heading:
+                    t = f"{heading} {t}"
+                result.append(
+                    {
+                        "number": str(para_num),
+                        "text": t,
+                        "locator": _loc(law_ref, art_num, str(para_num)),
+                    }
+                )
+        return result
+
+    # Fallback: strip the article-number tag, then extract remaining text.
+    art_copy = copy.deepcopy(article_tag)
+    for tag_name in ("gn", "nr"):
+        for elem in art_copy.find_all(tag_name):
+            elem.decompose()
+            break  # Remove only the first occurrence (the number tag)
+    t = _clean_text(art_copy)
+    if t:
+        return [
+            {"number": "1", "text": t, "locator": _loc(law_ref, art_num, "1")}
+        ]
+    return []
+
+
+# ── Core parse function ───────────────────────────────────────────────────────
+
+class SGMLParseError(Exception):
+    """Raised when SGML parsing fails critically (strict mode)."""
+    pass
+
+
+def parse_sgml(content: str, source_file: str) -> dict:
+    """
+    Parse an SGML string (already decoded to str) into the internal law schema.
+
+    Args:
+        content:     File content decoded to str.
+                     Use cp1252 encoding when reading real Lagasafn files.
+        source_file: Filename used for warnings and the schema's source_file field.
+
+    Returns:
+        dict conforming to the law JSON schema (schema_version, articles, …).
+
+    Raises:
+        ValueError: If no articles can be extracted.
+    """
+    parse_warnings: List[str] = []
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(content, "html.parser")
+
+    # Metadata
+    law_number, law_year, title, publication_date, meta_w = _extract_metadata(
+        soup, source_file
+    )
+    parse_warnings.extend(meta_w)
+    law_ref = _build_law_ref(law_number, law_year, title, parse_warnings)
+
+    # Body search root
+    body = soup.find("body") or soup
+
+    # ── Article extraction: try three structural patterns ─────────────────────
+    articles: List[dict] = []
+
+    # Pattern A & fixture: <gr> or <grein> article tags
+    article_tags = body.find_all(["gr", "grein"])
+    if article_tags:
+        for tag in article_tags:
+            art_num = _article_number(tag)
+            if art_num is None:
+                parse_warnings.append("<gr>/<grein> with no numeric id — skipped")
+                continue
+
+            chapter = _chapter_ancestor(tag)
+            paras = _paragraphs(tag, law_ref, art_num)
+            if not paras:
+                parse_warnings.append(f"article {art_num} has no text — skipped")
+                continue
+
+            articles.append(
+                {
+                    "number": art_num,
+                    "locator": _loc(law_ref, art_num),
+                    "chapter": chapter,
+                    "paragraphs": paras,
+                }
+            )
+
+    else:
+        # Pattern B: no article tags — use <chapter> blocks as article units
+        chapter_tags = body.find_all("chapter")
+        if chapter_tags:
+            for i, chap in enumerate(chapter_tags, 1):
+                chap_label = _chapter_label(chap)
+                chap_copy = copy.deepcopy(chap)
+                for chnm in chap_copy.find_all("chnm1"):
+                    chnm.decompose()
+                t = _clean_text(chap_copy)
+                if t:
+                    art_num = str(i)
+                    articles.append(
+                        {
+                            "number": art_num,
+                            "locator": _loc(law_ref, art_num),
+                            "chapter": chap_label,
+                            "paragraphs": [
+                                {
+                                    "number": "1",
+                                    "text": t,
+                                    "locator": _loc(law_ref, art_num, "1"),
+                                }
+                            ],
+                        }
+                    )
+            parse_warnings.append(
+                f"no <gr>/<grein> tags — used {len(articles)} <chapter> blocks as articles"
+            )
+
+        else:
+            # Pattern C: no structure at all — entire body as single article
+            t = _clean_text(body)
+            if t:
+                articles.append(
+                    {
+                        "number": "1",
+                        "locator": _loc(law_ref, "1"),
+                        "chapter": None,
+                        "paragraphs": [
+                            {
+                                "number": "1",
+                                "text": t,
+                                "locator": _loc(law_ref, "1", "1"),
+                            }
+                        ],
+                    }
+                )
+            parse_warnings.append(
+                "no <gr>/<grein> or <chapter> tags — entire body as single article"
+            )
+
+    if not articles:
+        raise ValueError(f"No articles extracted from {source_file!r}")
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "source_file": source_file,
+        "law_number": law_number,
+        "law_year": law_year,
+        "law_reference": law_ref,
+        "title": title,
+        "publication_date": publication_date,
+        "articles": articles,
+        "parse_warnings": parse_warnings,
+        "article_count": len(articles),
+    }
+
+
+def parse_file(path: Path) -> dict:
+    """
+    Read one SGML file with cp1252 encoding and return the parsed schema dict.
+    """
+    content = path.read_text(encoding="cp1252", errors="replace")
+    return parse_sgml(content, source_file=path.name)
+
+
+# ── Backward-compatible SGMLParser class ─────────────────────────────────────
+
+class SGMLParser:
+    """
+    Backward-compatible wrapper around parse_sgml().
+    Returns ParsedLaw / ParsedArticle objects for the ingestion pipeline.
+
+    The pipeline (app/ingestion/pipeline.py) uses this class; changing its
+    public API would break that code.
+    """
+
+    def __init__(self, strict: bool = False):
+        self.strict = strict
+        self.warnings: List[str] = []
+
+    def parse(self, sgml_content: str, source_info: str = "unknown") -> ParsedLaw:
+        """
+        Parse SGML content and return a ParsedLaw object.
+
+        Args:
+            sgml_content: Decoded SGML string.
+            source_info:  Identifier used in warnings (e.g. filename).
+
+        Raises:
+            SGMLParseError: In strict mode if no articles can be extracted.
+        """
+        self.warnings = []
+
+        try:
+            result = parse_sgml(sgml_content, source_file=source_info)
+        except ValueError as exc:
+            if self.strict:
+                raise SGMLParseError(str(exc)) from exc
+            self.warnings.append(str(exc))
+            return ParsedLaw(
+                law_number="0",
+                law_year="0000",
+                title="(parse failed)",
+                articles=[],
+                full_text="",
+                metadata={
+                    "source_info": source_info,
+                    "parser_warnings": [str(exc)],
+                },
+            )
+
+        self.warnings = result["parse_warnings"]
+
+        # Convert to ParsedArticle objects with canonicalized text
+        parsed_articles = []
+        for a in result["articles"]:
+            para_texts = [p["text"] for p in a["paragraphs"]]
+            article_text = canonicalize(" ".join(para_texts))
+            parsed_paragraphs = [
+                {"number": p["number"], "text": canonicalize(p["text"])}
+                for p in a["paragraphs"]
+            ]
+            parsed_articles.append(
+                ParsedArticle(
+                    number=a["number"],
+                    text=article_text,
+                    paragraphs=parsed_paragraphs,
+                )
+            )
+
+        # Build full document text (title + articles)
+        parts = [result["title"]]
+        for art in parsed_articles:
+            parts.append(f"{art.number}. gr.")
+            parts.append(art.text)
+        full_text = canonicalize("\n".join(parts))
+
+        return ParsedLaw(
+            law_number=result["law_number"],
+            law_year=result["law_year"],
+            title=canonicalize(result["title"]),
+            articles=parsed_articles,
+            full_text=full_text,
+            metadata={
+                "source_info": source_info,
+                "parser_warnings": self.warnings,
+                "publication_date": result.get("publication_date", ""),
+            },
+        )
