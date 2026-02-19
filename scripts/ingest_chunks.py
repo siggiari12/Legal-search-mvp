@@ -130,8 +130,23 @@ def insert_batch(
         }
         for chunk, embedding in zip(chunks, embeddings)
     ]
-    supabase.table(TABLE_NAME).upsert(rows, on_conflict="id").execute()
-    return len(rows)
+
+    # Deduplicate by id within the batch — PostgreSQL rejects upserts where
+    # two rows in the same statement share the same conflict key.
+    # Known case: article "55. gr." and "55. gr. a." in 2007100.json both
+    # resolve to the same locator after parser digit-extraction.
+    seen: dict[str, dict] = {}
+    for row in rows:
+        seen[row["id"]] = row
+    deduped = list(seen.values())
+
+    if len(deduped) < len(rows):
+        tqdm.write(
+            f"  [dedup] dropped {len(rows) - len(deduped)} duplicate id(s) in batch"
+        )
+
+    supabase.table(TABLE_NAME).upsert(deduped, on_conflict="id").execute()
+    return len(deduped)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
