@@ -22,4 +22,7 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 httpx>=0.25.0
 
+# Utilities
+tqdm>=4.66.0
+
 # Note: httpx already listed under Testing
