@@ -134,8 +134,12 @@ def build_chunks(input_dir: Path, output_path: Path, limit: int | None) -> None:
                     chunks_skipped_short_text += 1
                     continue
 
+                # Use source_file stem as the chunk_id anchor — law_reference is
+                # shared across multi-part laws (e.g. Jónsbók 1281000.400/401)
+                # so it cannot guarantee uniqueness.  source_file is always unique.
+                source_stem = law.get("source_file", law_path.name).replace(".sgml", "")
                 chunk = {
-                    "chunk_id":           f"{law_ref}::{article_locator}",
+                    "chunk_id":           f"{source_stem}::{article_locator}::{article.get('number', '')}",
                     "source":             "law",
                     "law_reference":      law_ref,
                     "law_title":          law_title,
