@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-evaluate_retrieval.py — Research-grade vector retrieval benchmark for the Icelandic legal corpus.
+evaluate_retrieval.py -Research-grade vector retrieval benchmark for the Icelandic legal corpus.
 
 Embeds each query with text-embedding-3-small, calls match_documents, and records
 similarity distribution metrics.  Uses token-prefix keyword heuristics and law
 reference lookup to classify each query.  Produces a structured table, per-category
 breakdown, aggregate dispersion stats, and a rule-based architectural recommendation.
 
-No LLM calls.  Summary → stdout.  Per-query progress → stderr.
+No LLM calls.  Summary ->stdout.  Per-query progress ->stderr.
 
 Usage:
     python scripts/evaluate_retrieval.py
@@ -257,15 +257,15 @@ def compute_metrics(
     """
     Compute retrieval quality metrics and classify verdict for one query.
 
-    Hits are sorted defensively by similarity DESC — never rely on RPC ordering.
+    Hits are sorted defensively by similarity DESC -never rely on RPC ordering.
 
     Verdict rules (first match wins):
-      Rule A: expected_law_reference in top 3       → likely_good
-      Rule B: max_sim >= threshold_high             → likely_good
+      Rule A: expected_law_reference in top 3       ->likely_good
+      Rule B: max_sim >= threshold_high             ->likely_good
       Rule C: max_sim >= threshold_moderate
-              AND keyword hit in top-1 text         → likely_good
-      Rule D: max_sim >= threshold_mid              → borderline
-      Else                                          → weak
+              AND keyword hit in top-1 text         ->likely_good
+      Rule D: max_sim >= threshold_mid              ->borderline
+      Else                                          ->weak
 
     threshold_moderate is the explicit midpoint between high and mid (or CLI override).
     No hidden multipliers.
@@ -277,7 +277,7 @@ def compute_metrics(
             keyword_hit=False, ref_hit=False, verdict="weak",
         )
 
-    # Defensive sort — do not assume RPC returns rows ordered by similarity
+    # Defensive sort -do not assume RPC returns rows ordered by similarity
     hits = sorted(hits, key=lambda h: float(h["similarity"]), reverse=True)
 
     sims     = [float(h["similarity"]) for h in hits]
@@ -335,15 +335,15 @@ def print_table(results: list[QueryResult]) -> None:
         f"{'max':>{CW_N}}"
         f"{'avg':>{CW_N}}"
         f"{'delta':>{CW_N}}"
-        f"  {'≥.75':>4}"
-        f"  {'≥.60':>4}"
-        f"  {'≥.50':>4}"
+        f"  {'>=75':>4}"
+        f"  {'>=60':>4}"
+        f"  {'>=50':>4}"
         f"  {'kw':>2}"
         f"  {'ref':>3}"
         f"  {'top_law_ref':<{CW_R}}"
         f"  verdict"
     )
-    sep = "─" * len(header)
+    sep = "-" * len(header)
     print(header)
     print(sep)
     for r in results:
@@ -375,9 +375,9 @@ def print_category_breakdown(results: list[QueryResult]) -> None:
 
     print()
     print("CATEGORY BREAKDOWN")
-    hdr = f"  {'category':<16}  {'N':>3}  {'avg max':>8}  {'med max':>8}  {'≥.60':>5}  {'kw%':>5}  verdict dist"
+    hdr = f"  {'category':<16}  {'N':>3}  {'avg max':>8}  {'med max':>8}  {'>=60':>5}  {'kw%':>5}  verdict dist"
     print(hdr)
-    print("  " + "─" * (len(hdr) - 2))
+    print("  " + "-" * (len(hdr) - 2))
     for cat in sorted(cats):
         cr  = cats[cat]
         n   = len(cr)
@@ -434,36 +434,36 @@ def print_aggregate(
     print(f"  Avg  max similarity         : {avg_max:.4f}")
     print(f"  Med  max similarity         : {med_max:.4f}")
     std_note = (
-        "(low  → uniform distribution across queries)"  if std_max < 0.04 else
-        "(mod  → some domain variance)"                 if std_max < 0.08 else
-        "(high → strong domain sensitivity)"
+        "(low  ->uniform distribution across queries)"  if std_max < 0.04 else
+        "(mod  ->some domain variance)"                 if std_max < 0.08 else
+        "(high ->strong domain sensitivity)"
     )
     print(f"  Std  max similarity         : {std_max:.4f}  {std_note}")
-    print(f"  Avg  delta (max−2nd)        : {avg_delta:.4f}")
+    print(f"  Avg  delta (max-2nd)        : {avg_delta:.4f}")
     print(f"  Med  delta                  : {med_delta:.4f}")
     flat_note = (
-        "(very flat — poor top-1 differentiation)" if flatness_ratio < 0.03 else
+        "(very flat -poor top-1 differentiation)" if flatness_ratio < 0.03 else
         "(moderate top-1 separation)"              if flatness_ratio < 0.08 else
         "(clear top-1 signal)"
     )
-    print(f"  Flatness ratio (Δ/avg_max)  : {flatness_ratio:.4f}  {flat_note}")
-    print(f"  Queries with hit ≥ 0.60     : {pct_60:.0f}%")
-    print(f"  Queries with hit ≥ 0.50     : {pct_50:.0f}%")
+    print(f"  Flatness ratio (d/avg_max)  : {flatness_ratio:.4f}  {flat_note}")
+    print(f"  Queries with hit >=0.60     : {pct_60:.0f}%")
+    print(f"  Queries with hit >=0.50     : {pct_50:.0f}%")
     print(f"  Top-1 keyword hit rate      : {f'{top1_kw:.0f}%' if top1_kw is not None else 'n/a'}"
           f"  ({len(kw_queries)} queries with keywords)")
     print(f"  Top-1 ref hit rate          : {f'{top1_ref:.0f}%' if top1_ref is not None else 'n/a (no expected refs set)'}")
-    print(f"  Verdict — likely_good       : {likely}/{n}")
-    print(f"  Verdict — borderline        : {borderline}/{n}")
-    print(f"  Verdict — weak              : {weak}/{n}")
+    print(f"  Verdict -likely_good       : {likely}/{n}")
+    print(f"  Verdict -borderline        : {borderline}/{n}")
+    print(f"  Verdict -weak              : {weak}/{n}")
 
     if debug:
         # Histogram buckets derived from configured thresholds
         bucket_lo = threshold_mid - 0.10
         labels = [
-            f"≥{threshold_high:.2f}",
-            f"{threshold_moderate:.2f}–{threshold_high:.2f}",
-            f"{threshold_mid:.2f}–{threshold_moderate:.2f}",
-            f"{bucket_lo:.2f}–{threshold_mid:.2f}",
+            f">={threshold_high:.2f}",
+            f"{threshold_moderate:.2f}-{threshold_high:.2f}",
+            f"{threshold_mid:.2f}-{threshold_moderate:.2f}",
+            f"{bucket_lo:.2f}-{threshold_mid:.2f}",
             f"<{bucket_lo:.2f}",
         ]
         counts = [
@@ -476,7 +476,7 @@ def print_aggregate(
         print()
         print("  Max-similarity histogram (threshold-aligned):")
         for label, count in zip(labels, counts):
-            bar = "█" * count
+            bar = "#" * count
             print(f"    {label:<14}  {bar:<{n}} ({count})")
 
 
@@ -512,39 +512,39 @@ def print_diagnostic_summary(
 
     print()
     print("RETRIEVAL DIAGNOSTIC SUMMARY")
-    print("─" * 54)
+    print("-" * 54)
 
     print(f"  Percentiles  P25 / P50 / P75 : {p25:.4f} / {p50:.4f} / {p75:.4f}")
     if p25 < threshold_mid:
-        print(f"  WARNING: P25 ({p25:.3f}) < threshold_mid ({threshold_mid:.2f}) — "
+        print(f"  WARNING: P25 ({p25:.3f}) < threshold_mid ({threshold_mid:.2f}) -"
               "mid threshold is optimistic for this corpus.")
 
     print()
     sharpness = (
-        "STRONG   — clear top-1 signal (avg delta > 0.10)" if avg_delta > 0.10 else
-        "MODERATE — some differentiation between top hits" if avg_delta > 0.04 else
-        "FLAT     — densely clustered scores (avg delta ≤ 0.04); hybrid BM25 likely needed"
+        "STRONG   -clear top-1 signal (avg delta > 0.10)" if avg_delta > 0.10 else
+        "MODERATE -some differentiation between top hits" if avg_delta > 0.04 else
+        "FLAT     -densely clustered scores (avg delta <= 0.04); hybrid BM25 likely needed"
     )
     print(f"  Sharpness    : {sharpness}")
 
     score_lv = (
-        f"HIGH   — avg max {avg_max:.3f}; strong embedding signal" if avg_max >= 0.70 else
-        f"MEDIUM — avg max {avg_max:.3f}; reasonable signal"        if avg_max >= 0.60 else
-        f"LOW    — avg max {avg_max:.3f}; marginal signal"          if avg_max >= 0.50 else
-        f"POOR   — avg max {avg_max:.3f}; embedding may not suit corpus style"
+        f"HIGH   -avg max {avg_max:.3f}; strong embedding signal" if avg_max >= 0.70 else
+        f"MEDIUM -avg max {avg_max:.3f}; reasonable signal"        if avg_max >= 0.60 else
+        f"LOW    -avg max {avg_max:.3f}; marginal signal"          if avg_max >= 0.50 else
+        f"POOR   -avg max {avg_max:.3f}; embedding may not suit corpus style"
     )
     print(f"  Score level  : {score_lv}")
 
     disp = (
-        f"LOW  (σ={std_max:.3f}) — uniform quality across query types" if std_max < 0.04 else
-        f"MOD  (σ={std_max:.3f}) — some domain variance"               if std_max < 0.08 else
-        f"HIGH (σ={std_max:.3f}) — strong domain sensitivity; consider per-domain thresholds"
+        f"LOW  (std={std_max:.3f}) -uniform quality across query types" if std_max < 0.04 else
+        f"MOD  (std={std_max:.3f}) -some domain variance"               if std_max < 0.08 else
+        f"HIGH (std={std_max:.3f}) -strong domain sensitivity; consider per-domain thresholds"
     )
     print(f"  Dispersion   : {disp}")
 
     print()
     print(f"  Recommended min_similarity   : {recommended:.2f}")
-    print(f"  Derivation: P25={p25:.3f} → floor to 0.05 = {raw_rec:.2f}, "
+    print(f"  Derivation: P25={p25:.3f} ->floor to 0.05 = {raw_rec:.2f}, "
           f"clamped to [{threshold_mid - 0.05:.2f}, {threshold_high:.2f}]")
     if recommended < threshold_high - 0.05:
         print(f"  NOTE: threshold-high ({threshold_high:.2f}) exceeds recommended. "
@@ -552,22 +552,22 @@ def print_diagnostic_summary(
 
     print()
     print("ARCHITECTURAL RECOMMENDATION")
-    print("─" * 54)
+    print("-" * 54)
 
     if avg_max >= 0.70 and pct_60 >= 70 and flatness_ratio >= 0.05:
         arch = "VECTOR-ONLY RECOMMENDED"
-        note = f"Strong scores (avg max {avg_max:.3f}), {pct_60:.0f}% coverage ≥ 0.60, clear top-1 signal."
+        note = f"Strong scores (avg max {avg_max:.3f}), {pct_60:.0f}% coverage >=0.60, clear top-1 signal."
     elif avg_max < 0.50:
         arch = "RE-CHUNKING LIKELY NEEDED"
         note = (f"Avg max {avg_max:.3f} is very low. Article-level chunks may be too coarse. "
                 "Consider sub-article or paragraph-level granularity.")
     elif flatness_ratio < 0.03 or avg_delta < 0.03:
         arch = "HYBRID BM25 + VECTOR REQUIRED"
-        note = (f"Flatness ratio {flatness_ratio:.3f} — poor top-1 differentiation. "
+        note = (f"Flatness ratio {flatness_ratio:.3f} -poor top-1 differentiation. "
                 "Lexical BM25 on article text would add the precision vector alone cannot.")
     elif pct_60 < 50:
         arch = "HYBRID BM25 + VECTOR REQUIRED"
-        note = (f"Only {pct_60:.0f}% of queries have a hit ≥ 0.60. "
+        note = (f"Only {pct_60:.0f}% of queries have a hit >=0.60. "
                 "Vector retrieval alone cannot reliably serve this query set.")
     elif avg_max >= 0.55 and pct_60 >= 50:
         arch = "VECTOR + LEXICAL RE-RANKING RECOMMENDED"
@@ -610,7 +610,7 @@ def write_csv(results: list[QueryResult], path: str) -> None:
                 "top_law_ref": r.top_law_ref,
                 "verdict":     r.verdict,
             })
-    print(f"\nCSV written → {out}")
+    print(f"\nCSV written ->{out}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

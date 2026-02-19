@@ -1,0 +1,16 @@
+query_text,category,max_sim,avg_sim,delta,above_75,above_60,above_50,keyword_hit,ref_hit,top_law_ref,verdict
+Hvenær má segja starfsmanni upp?,employment,0.561861,0.548999,0.000828,0,0,8,N,N,80/2022,borderline
+Hver er löglegur uppsagnarfrestur?,employment,0.673047,0.644800,0.026301,0,8,8,Y,N,63/2000,likely_good
+Hverjar eru skyldur vinnuveitanda gagnvart starfsmanni?,employment,0.667660,0.640849,0.022344,0,8,8,N,N,46/1980,borderline
+Hvað er orlofsréttur launþega?,employment,0.696002,0.664358,0.002773,0,8,8,Y,N,53/1972,likely_good
+Hvenær fyrnist krafa?,civil,0.691082,0.592108,0.101233,0,1,8,Y,N,30/2004,likely_good
+Getur leigjandi rifið leigusamning?,civil,0.603567,0.586737,0.009415,0,1,8,Y,N,36/1994,likely_good
+Hvernig er hjúskapur stofnaður?,civil,0.573133,0.563482,0.002045,0,0,8,N,N,63/2006,borderline
+Hvað er þjófnaður samkvæmt hegningarlögum?,criminal,0.644499,0.529909,0.077171,0,1,5,N,N,61/2003,borderline
+Hvenær telst verknaður af ásetningi freminn?,criminal,0.666667,0.629084,0.031545,0,8,8,N,N,35/1985,borderline
+Hvernig er hlutafélag stofnað?,corporate,0.733581,0.699771,0.017437,0,8,8,Y,N,2/1995,likely_good
+Hverjar eru skyldur stjórnar hlutafélags?,corporate,0.673279,0.632592,0.001183,0,8,8,Y,N,61/2003,likely_good
+Hverjir mega starfa sem læknar?,health,0.593502,0.570215,0.005290,0,0,8,N,N,60/2007,borderline
+Samningur gerður við mann sem er ekki lögráða er ógildur,legal_phrasing,0.612580,0.554451,0.022164,0,1,8,N,N,151/2006,borderline
+Bótaábyrgð vegna tjóns af völdum bifreiðar,legal_phrasing,0.639682,0.617655,0.003721,0,8,8,N,N,31/1993,borderline
+Skilyrði fyrir veitingu rekstrarleyfis,legal_phrasing,0.737422,0.700216,0.017328,0,8,8,Y,N,88/2021,likely_good
