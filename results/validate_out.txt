@@ -1,0 +1,321 @@
+========================================================================
+PIPELINE VALIDATION
+  Model          : gpt-4o-mini
+  min_similarity : 0.55
+  k              : 8
+  Mode           : HYBRID (FTS+vector)
+  Queries        : 8
+========================================================================
+
+========================================================================
+QUERY 1: Hver er löglegur uppsagnarfrestur?
+  Category     : employment
+  Eval verdict : likely_good  (prev max_sim=0.673)
+  Note         : Good retrieval; should produce clear legal answer.
+
+  Retrieval    : max=0.4580  avg=0.4520  delta=0.0037  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.4580  vec=0.6542  fts=0.0000  75/2008       Lög nr. 75/2008 - 21. gr.
+    [2] sim=0.4543  vec=0.6490  fts=0.0000  150/2007      Lög nr. 150/2007 - 7. gr.
+    [3] sim=0.4527  vec=0.6467  fts=0.0000  88/2019       Lög nr. 88/2019 - 13. gr.
+    [4] sim=0.4517  vec=0.6452  fts=0.0000  27/1999       Lög nr. 27/1999 - 1. gr.
+    [5] sim=0.4507  vec=0.6439  fts=0.0000  60/2020       Lög nr. 60/2020 - 26. gr.
+
+  Confidence   : low
+  Retry used   : no
+  Citations    : 0  |  Validation: PASS
+
+  Answer:
+    Heimildirnar sem ég hef ekki veitt upplýsingar um löglegan
+    uppsagnarfrest.
+
+  Notes: Engar heimildir um uppsagnarfrest eru til staðar í þeim textum sem gefnar voru.
+
+  Citations:
+
+  QUALITATIVE  : ACCEPTABLE
+
+========================================================================
+QUERY 2: Hvenær má segja starfsmanni upp?
+  Category     : employment
+  Eval verdict : borderline  (prev max_sim=0.562)
+  Note         : Low max_sim, very flat delta — tests whether weak retrieval still gives useful answer.
+
+  Retrieval    : max=0.7631  avg=0.5234  delta=0.2519  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.7631  vec=0.6616  fts=0.0032  70/1996       Lög nr. 70/1996 - 9. gr.
+    [2] sim=0.5112  vec=0.7303  fts=0.0000  70/1996       Lög nr. 70/1996 - 14. gr.
+    [3] sim=0.4909  vec=0.7012  fts=0.0000  70/1996       Lög nr. 70/1996 - 13. gr.
+    [4] sim=0.4894  vec=0.6991  fts=0.0000  70/1996       Lög nr. 70/1996 - 43. gr.
+    [5] sim=0.4863  vec=0.6947  fts=0.0000  139/2005      Lög nr. 139/2005 - 6. gr.
+
+  Confidence   : high
+  Retry used   : no
+  Citations    : 2  |  Validation: PASS
+
+  Answer:
+    Starfsmanni má segja upp störfum samkvæmt ákvæðum í
+    ráðningarsamningi. Einnig er skylt að segja starfsmanni upp
+    störfum frá og með næstu mánaðamótum eftir að hann nær 70 ára
+    aldri.
+
+  Citations:
+    70/1996 — Lög nr. 70/1996 - 43. gr.
+    "Forstöðumaður stofnunar hefur rétt til að segja starfsmanni upp
+    störfum eftir því sem fyrir er mælt í ráðningarsamningi."
+    70/1996 — Lög nr. 70/1996 - 43. gr.
+    "Starfsmanni skal þó jafnan segja upp störfum frá og með næstu
+    mánaðamótum eftir að hann nær 70 ára aldri."
+
+  QUALITATIVE  : GOOD
+
+========================================================================
+QUERY 3: Hvenær fyrnist krafa?
+  Category     : civil
+  Eval verdict : likely_good  (prev max_sim=0.691)
+  Note         : Clear signal, high delta — good candidate for confident citation.
+
+  Retrieval    : max=0.4940  avg=0.4594  delta=0.0103  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.4940  vec=0.7057  fts=0.0000  30/2004       Lög nr. 30/2004 - 125. gr.
+    [2] sim=0.4837  vec=0.6910  fts=0.0000  30/2004       Lög nr. 30/2004 - 52. gr.
+    [3] sim=0.4607  vec=0.6581  fts=0.0000  150/2007      Lög nr. 150/2007 - 4. gr.
+    [4] sim=0.4575  vec=0.6536  fts=0.0000  75/1997       Lög nr. 75/1997 - 41. gr.
+    [5] sim=0.4526  vec=0.6466  fts=0.0000  55/2012       Lög nr. 55/2012 - 31. gr.
+
+  Confidence   : high
+  Retry used   : no
+  Citations    : 1  |  Validation: PASS
+
+  Answer:
+    Krafa um vátryggingarfjárhæð fyrnist á tíu árum, en aðrar kröfur
+    um bætur fyrnast á fjórum árum. Fresturinn hefst við lok þess
+    almanaksárs þegar sá er kröfuna á fékk nauðsynlegar upplýsingar um
+    þau atvik sem krafa hans er reist á. Krafan fyrnist þó í síðasta
+    lagi á 20 árum, en aðrar kröfur á 10 árum, eftir lok þess
+    almanaksárs sem vátryggingaratburður varð.
+
+  Citations:
+    30/2004 — Lög nr. 30/2004 - 125. gr.
+    "Krafa um vátryggingarfjárhæð samkvæmt höfuðstólstryggingum
+    fyrnist á tíu árum og aðrar kröfur um bætur á fjórum árum."
+
+  QUALITATIVE  : GOOD
+
+========================================================================
+QUERY 4: Hvernig er hjúskapur stofnaður?
+  Category     : civil
+  Eval verdict : borderline  (prev max_sim=0.573)
+  Note         : Low sim; no keyword match in top-1. Potential for off-topic answer.
+
+  Retrieval    : max=0.4349  avg=0.4256  delta=0.0038  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.4349  vec=0.6212  fts=0.0000  38/2010       Lög nr. 38/2010 - 6. gr.
+    [2] sim=0.4310  vec=0.6158  fts=0.0000  33/1999       Lög nr. 33/1999 - 42. gr.
+    [3] sim=0.4287  vec=0.6124  fts=0.0000  66/2023       Lög nr. 66/2023 - 2. gr.
+    [4] sim=0.4282  vec=0.6118  fts=0.0000  112/2008      Lög nr. 112/2008 - 52. gr.
+    [5] sim=0.4233  vec=0.6047  fts=0.0000  2/1995        Lög nr. 2/1995 - 152. gr.
+
+  Confidence   : low
+  Retry used   : no
+  Citations    : 0  |  Validation: PASS
+
+  Answer:
+    Heimildirnar sem gefnar eru upp veita ekki upplýsingar um hvernig
+    hjúskapur er stofnaður.
+
+  Notes: Engar heimildir fjalla um stofnun hjúskapar.
+
+  Citations:
+
+  QUALITATIVE  : ACCEPTABLE
+
+========================================================================
+QUERY 5: Getur leigjandi rifið leigusamning?
+  Category     : civil
+  Eval verdict : likely_good  (prev max_sim=0.604)
+  Note         : Low but keyword-confirmed. Tests whether keyword hit compensates for low sim.
+
+  Retrieval    : max=0.4786  avg=0.4464  delta=0.0213  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.4786  vec=0.6837  fts=0.0000  36/1994       Lög nr. 36/1994 - 12. gr.
+    [2] sim=0.4573  vec=0.6533  fts=0.0000  36/1994       Lög nr. 36/1994 - 62. gr.
+    [3] sim=0.4439  vec=0.6341  fts=0.0000  36/1994       Lög nr. 36/1994 - 52. gr.
+    [4] sim=0.4407  vec=0.6296  fts=0.0000  36/1994       Lög nr. 36/1994 - 66. gr.
+    [5] sim=0.4406  vec=0.6295  fts=0.0000  36/1994       Lög nr. 36/1994 - 6. gr.
+
+  Confidence   : high
+  Retry used   : no
+  Citations    : 1  |  Validation: PASS
+
+  Answer:
+    Já, leigjandi getur rifið leigusamning ef einhver ástæða sem talin
+    er í 61. gr. kemur upp. Þá þarf leigjandi að bæta leigusala tjón
+    sem leiðir beint af vanefndum hans.
+
+  Citations:
+    36/1994 — Lög nr. 36/1994 - 62. gr.
+    "Nú er leigusamningi rift af einhverri þeirri ástæðu sem talin er
+    í 61. gr. og skal leigjandi þá bæta leigusala það tjón sem leiðir
+    beint af vanefndum hans."
+
+  QUALITATIVE  : GOOD
+
+========================================================================
+QUERY 6: Hvað er þjófnaður samkvæmt hegningarlögum?
+  Category     : criminal
+  Eval verdict : borderline  (prev max_sim=0.644)
+  Note         : High delta (0.077) but no keyword hit in top-1. Possible topic drift.
+
+  Retrieval    : max=0.4906  avg=0.4746  delta=0.0062  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.4906  vec=0.7009  fts=0.0000  61/2003       Lög nr. 61/2003 - 13. gr.
+    [2] sim=0.4844  vec=0.6920  fts=0.0000  61/2003       Lög nr. 61/2003 - 4. gr.
+    [3] sim=0.4802  vec=0.6860  fts=0.0000  74/2020       Lög nr. 74/2020 - 16. gr.
+    [4] sim=0.4775  vec=0.6821  fts=0.0000  88/2005       Lög nr. 88/2005 - 187. gr.
+    [5] sim=0.4697  vec=0.6710  fts=0.0000  61/2003       Lög nr. 61/2003 - 10. gr.
+
+  Confidence   : low
+  Retry used   : no
+  Citations    : 0  |  Validation: PASS
+
+  Answer:
+    Heimildirnar sem gefnar eru hér innihalda ekki skýra skilgreiningu
+    á þjófnaði samkvæmt hegningarlögum.
+
+  Notes: Engar heimildir um þjófnað samkvæmt hegningarlögum eru til staðar í gefnum texta.
+
+  Citations:
+
+  QUALITATIVE  : ACCEPTABLE
+
+========================================================================
+QUERY 7: Hvernig er hlutafélag stofnað?
+  Category     : corporate
+  Eval verdict : likely_good  (prev max_sim=0.734)
+  Note         : Strongest retrieval in eval. Should be best-case scenario.
+
+  Retrieval    : max=0.5135  avg=0.4994  delta=0.0096  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.5135  vec=0.7336  fts=0.0000  2/1995        Lög nr. 2/1995 - 56. gr.
+    [2] sim=0.5039  vec=0.7198  fts=0.0000  138/1994      Lög nr. 138/1994 - 12. gr.
+    [3] sim=0.5017  vec=0.7168  fts=0.0000  2/1995        Lög nr. 2/1995 - 134. gr.
+    [4] sim=0.5013  vec=0.7161  fts=0.0000  64/2010       Lög nr. 64/2010 - 4. gr.
+    [5] sim=0.4974  vec=0.7106  fts=0.0000  2/1995        Lög nr. 2/1995 - 4. gr.
+
+  Confidence   : high
+  Retry used   : YES
+  Citations    : 2  |  Validation: FAIL
+    [ERROR] Cite 1: quote not found (whitespace-normalised) in chunk '1995002::Lög nr. 2/1995 - 4. gr.::4'.
+
+  Answer:
+    Hlutafélag er stofnað með því að halda stofnfund þar sem
+    stofnendur ákveða nauðsynlegar upplýsingar um félagið, svo sem
+    nöfn, kennitölu og heimilisföng stofnenda, fjárhæðir fyrir hvern
+    hlut, fresti til áskriftar og greiðslu hlutafjár, og heimilisfang
+    félagsins. Hlutafé félagsins við stofnun skal vera 20 milljónir
+    króna.
+
+  Citations:
+    2/1995 — Lög nr. 2/1995 - 4. gr.
+    "Í stofnsamningi skal ávallt greina: Nöfn, kennitölu og
+    heimilisföng stofnenda. Hvaða fjárhæð skuli greiða fyrir hvern
+    hlut. Fresti til áskriftar fyrir hlut og til greiðslu hlutafjár.
+    Innan hvaða tíma stofnfund skuli halda, svo og hvernig til hans
+    skuli boðað."
+    64/2010 — Lög nr. 64/2010 - 4. gr.
+    "Hlutafé félagsins við stofnun þess skal vera 20 milljónir króna
+    og greiðast úr ríkissjóði."
+
+  QUALITATIVE  : PROBLEMATIC
+
+========================================================================
+QUERY 8: Hverjir mega starfa sem læknar?
+  Category     : health
+  Eval verdict : borderline  (prev max_sim=0.594)
+  Note         : No keyword match, low sim. Tests whether pipeline admits uncertainty.
+
+  Retrieval    : max=0.4346  avg=0.4285  delta=0.0012  strong=8
+  Sufficient   : YES
+
+  Top-5 retrieved chunks:
+    [1] sim=0.4346  vec=0.6209  fts=0.0000  50/1986       Lög nr. 50/1986 - 7. gr.
+    [2] sim=0.4335  vec=0.6192  fts=0.0000  100/2020      Lög nr. 100/2020 - 108. gr.
+    [3] sim=0.4319  vec=0.6170  fts=0.0000  40/2008       Lög nr. 40/2008 - 7. gr.
+    [4] sim=0.4299  vec=0.6141  fts=0.0000  18/1977       Lög nr. 18/1977 - 12. gr.
+    [5] sim=0.4290  vec=0.6129  fts=0.0000  134/1995      Lög nr. 134/1995 - 26. gr.
+
+  Confidence   : high
+  Retry used   : no
+  Citations    : 1  |  Validation: PASS
+
+  Answer:
+    Læknar, tannlæknar og dýralæknar mega starfa ef þeir eru ekki
+    eigendur að svo stórum hluta í fyrirtæki sem rekið er á grundvelli
+    lyfjaframleiðsluleyfis, leyfis til heildsöludreifingar lyfja,
+    leyfis til miðlunar lyfja eða lyfsöluleyfis að það hafi teljandi
+    áhrif á fjárhagslega afkomu þeirra.
+
+  Citations:
+    100/2020 — Lög nr. 100/2020 - 108. gr.
+    "Starfandi læknar, tannlæknar og dýralæknar mega ekki vera
+    eigendur að svo stórum hluta í fyrirtæki sem rekið er á grundvelli
+    lyfjaframleiðsluleyfis, leyfis til heildsöludreifingar lyfja,
+    leyfis til miðlunar lyfja eða lyfsöluleyfis að það hafi teljandi
+    áhrif á fjárhagslega afkomu þeirra."
+
+  QUALITATIVE  : GOOD
+
+========================================================================
+VALIDATION SUMMARY
+========================================================================
+  Threshold used : min_similarity = 0.55
+  Total queries  : 8
+
+  GOOD           : 4
+  ACCEPTABLE     : 3
+  PROBLEMATIC    : 1
+  Declined (insuf.): 0
+  Citation pass  : 7/8 answered queries
+  Retry triggered: 1
+
+  Category breakdown:
+    category            N   good   accept   prob  declined
+    ------------------------------------------------------
+    civil               3      2        1      0         0
+    corporate           1      0        0      1         0
+    criminal            1      0        1      0         0
+    employment          2      1        1      0         0
+    health              1      1        0      0         0
+
+  Borderline queries (n=4): 4 acceptable-or-good
+  Likely-good queries (n=4):  3 acceptable-or-good
+
+========================================================================
+DECISION EVIDENCE
+------------------------------------------------------------------------
+
+  Q1: Is vector-only (threshold=0.60) sufficient?
+     -> NO — 1 PROBLEMATIC outcome(s) detected.
+
+  Q2: Do borderline retrieval cases degrade answer quality?
+      -> NO — borderline queries still produced acceptable-or-good answers.
+
+  Q3: Does flat similarity (low delta) cause real-world problems?
+     -> YES — 1 flat-delta queries produced PROBLEMATIC outputs.
+
+========================================================================

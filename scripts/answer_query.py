@@ -12,6 +12,8 @@ Usage:
     python scripts/answer_query.py --query "Hvenær má segja starfsmanni upp?"
     python scripts/answer_query.py --query "..." --k 5 --min_similarity 0.70
     python scripts/answer_query.py --query "..." --model gpt-4o --debug
+    python scripts/answer_query.py --query "..." --hybrid
+    python scripts/answer_query.py --query "..." --hybrid --debug
 """
 
 import argparse
@@ -20,6 +22,10 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.services.citation import build_context, validate_citations
+from app.services.retrieval import retrieve_hybrid
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 from supabase import create_client
@@ -30,10 +36,7 @@ from supabase import create_client
 EMBEDDING_MODEL           = "text-embedding-3-small"
 EMBEDDING_DIM             = 1536
 MAX_SOURCES               = 8
-MAX_CONTEXT_CHARS         = 12_000
-MAX_SOURCE_CHARS          = 1_800
 HIGH_CONFIDENCE_THRESHOLD = 0.85
-TRUNCATION_MARKER         = "\n[...]\n"
 TOKEN_WARN_THRESHOLD      = 6_000   # rough estimate; warn in debug if exceeded
 
 INSUFFICIENT_ANSWER = (
@@ -56,15 +59,22 @@ Skilaðu EINGÖNGU gildri JSON með eftirfarandi skema:
 {
   "answer_is": "<Icelandic answer>",
   "citations": [
-    {"law_reference": "...", "article_locator": "...", "quote": "<short exact substring from source>"}
+    {
+      "chunk_id": "<exact chunk_id value from the SOURCE block>",
+      "law_reference": "<law_reference from that SOURCE block>",
+      "article_locator": "<article_locator from that SOURCE block>",
+      "quote": "<short exact substring copied verbatim from the source text>"
+    }
   ],
   "confidence": "high" | "medium" | "low",
   "notes": "<brief explanation of uncertainty if any, or empty string>"
 }"""
 
 SYSTEM_PROMPT_STRICT = SYSTEM_PROMPT + (
-    "\n\nCRITICAL: Each quote field MUST be an exact verbatim substring copied "
-    "character-for-character from the provided source text. No paraphrasing. "
+    "\n\nCRITICAL: Each citation MUST copy chunk_id, law_reference and "
+    "article_locator exactly as they appear in the SOURCE block. "
+    "Each quote field MUST be an exact verbatim substring copied "
+    "character-for-character from that chunk's text. No paraphrasing. "
     "No summarising. If you cannot find an exact match, omit the citation entirely."
 )
 
@@ -147,112 +157,54 @@ def assess_retrieval(
     Returns (strong_hits, stats, sufficient).
 
     Sufficiency rules applied in order:
-      1. avg < min_similarity - 0.05 → universally weak, force insufficient.
-      2. len(strong) >= 2            → sufficient.
-      3. len(strong) == 1 AND (max > HIGH_CONFIDENCE_THRESHOLD OR delta > 0.25)
-                                     → single clear anchor, sufficient.
-      4. otherwise                   → insufficient.
+      1. vsim_avg < min_similarity - 0.05 → universally weak, force insufficient.
+      2. len(strong) >= 2                 → sufficient.
+      3. len(strong) == 1 AND (vsim_max > HIGH_CONFIDENCE_THRESHOLD OR vsim_delta > 0.25)
+                                          → single clear anchor, sufficient.
+      4. otherwise                        → insufficient.
 
-    delta = max - second_max signals whether the top hit is a clear leader or
-    part of a flat, undifferentiated cluster.
+    Stats (max/min/avg/delta) are computed from the combined similarity score
+    and are used for display only.  Sufficiency and strong-chunk filtering use
+    vector_sim when present (hybrid mode) or combined similarity otherwise
+    (vector-only mode), so that the FTS weight never deflates the threshold.
     """
-    sims        = [float(r.get("similarity") or 0.0) for r in hits]
-    sims_sorted = sorted(sims, reverse=True)
-    second_max  = sims_sorted[1] if len(sims_sorted) >= 2 else 0.0
+    # Combined similarity — display stats and ranking only.
+    combined = [float(r.get("similarity") or 0.0) for r in hits]
+    combined_sorted = sorted(combined, reverse=True)
+    second_combined = combined_sorted[1] if len(combined_sorted) >= 2 else 0.0
 
     stats: dict = {
-        "max":   sims_sorted[0] if sims_sorted else 0.0,
-        "min":   sims_sorted[-1] if sims_sorted else 0.0,
-        "avg":   sum(sims) / len(sims) if sims else 0.0,
-        "delta": sims_sorted[0] - second_max if sims_sorted else 0.0,
+        "max":   combined_sorted[0]  if combined_sorted else 0.0,
+        "min":   combined_sorted[-1] if combined_sorted else 0.0,
+        "avg":   sum(combined) / len(combined) if combined else 0.0,
+        "delta": combined_sorted[0] - second_combined if combined_sorted else 0.0,
     }
 
-    strong = [r for r in hits if float(r.get("similarity") or 0.0) >= min_similarity]
+    # Vector similarity — sufficiency gating.
+    # Falls back to combined similarity in vector-only mode (vector_sim absent).
+    def _vsim(r: dict) -> float:
+        v = r.get("vector_sim")
+        return float(v) if v is not None else float(r.get("similarity") or 0.0)
+
+    vsims        = [_vsim(r) for r in hits]
+    vsims_sorted = sorted(vsims, reverse=True)
+    second_vsim  = vsims_sorted[1] if len(vsims_sorted) >= 2 else 0.0
+    vsim_avg     = sum(vsims) / len(vsims) if vsims else 0.0
+    vsim_max     = vsims_sorted[0] if vsims_sorted else 0.0
+    vsim_delta   = vsims_sorted[0] - second_vsim if vsims_sorted else 0.0
+
+    strong = [r for r in hits if _vsim(r) >= min_similarity]
 
     # Rule 1: universally weak
-    if stats["avg"] < min_similarity - 0.05:
+    if vsim_avg < min_similarity - 0.05:
         return strong, stats, False
 
     sufficient = len(strong) >= 2 or (
         len(strong) == 1 and (
-            stats["max"] > HIGH_CONFIDENCE_THRESHOLD or stats["delta"] > 0.25
+            vsim_max > HIGH_CONFIDENCE_THRESHOLD or vsim_delta > 0.25
         )
     )
     return strong, stats, sufficient
-
-
-# ── Context building ──────────────────────────────────────────────────────────
-
-def _truncate_source(text: str, max_chars: int) -> str:
-    """
-    Truncate article text to max_chars.
-
-    Strategy:
-      1. Attempt paragraph-boundary truncation (preserves coherence).
-         Accept if result is >= 60% of max_chars.
-      2. Otherwise use a first-half + last-half split with TRUNCATION_MARKER.
-         Legal operative clauses (exceptions, penalties) often appear in later
-         paragraphs, so preserving the tail is preferable to a pure head-cut.
-    """
-    if len(text) <= max_chars:
-        return text
-
-    # Attempt 1: last clean paragraph boundary
-    result = ""
-    for para in text.split("\n\n"):
-        candidate = (result + "\n\n" + para).strip() if result else para
-        if len(candidate) > max_chars:
-            break
-        result = candidate
-
-    if len(result) >= max_chars * 0.6:
-        return result
-
-    # Attempt 2: head + tail split
-    half = (max_chars - len(TRUNCATION_MARKER)) // 2
-    return text[:half] + TRUNCATION_MARKER + text[-half:]
-
-
-def build_context(chunks: list[dict]) -> tuple[str, list[dict]]:
-    """
-    Build the LLM context string and return the exact list of chunks included.
-
-    Citations MUST be validated against the returned context_chunks, not the
-    full strong set — the char budget may exclude later entries, and the model
-    can only cite what it actually saw.
-    """
-    parts:          list[str]  = []
-    context_chunks: list[dict] = []
-    total = 0
-
-    for i, chunk in enumerate(chunks[:MAX_SOURCES], 1):
-        raw_text = (chunk.get("text") or "").strip()
-        text     = _truncate_source(raw_text, MAX_SOURCE_CHARS)
-        block    = (
-            f"[SOURCE {i}]\n"
-            f"law_reference: {chunk.get('law_reference', '')}\n"
-            f"article_locator: {chunk.get('article_locator', '')}\n"
-            f"text: {text}"
-        )
-
-        if total + len(block) > MAX_CONTEXT_CHARS:
-            remaining = MAX_CONTEXT_CHARS - total
-            if remaining > 100:
-                parts.append(block[:remaining])
-                context_chunks.append(chunk)
-            break
-
-        parts.append(block)
-        context_chunks.append(chunk)
-        total += len(block)
-
-    context = "\n\n".join(parts)
-
-    if not context.strip():
-        log("[ERROR] Context is empty after construction. Cannot generate answer.")
-        sys.exit(1)
-
-    return context, context_chunks
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
@@ -283,46 +235,11 @@ def validate_schema(data: dict) -> list[str]:
                 if not isinstance(cite, dict):
                     errors.append(f"Citation {j}: must be a dict, got {type(cite).__name__}")
                     continue
-                for cite_key in ("law_reference", "article_locator", "quote"):
+                for cite_key in ("chunk_id", "law_reference", "article_locator", "quote"):
                     if cite_key not in cite:
                         errors.append(f"Citation {j}: missing key '{cite_key}'")
                     elif not isinstance(cite[cite_key], str):
                         errors.append(f"Citation {j}: '{cite_key}' must be a string")
-
-    return errors
-
-
-def validate_citations(citations: list[dict], context_chunks: list[dict]) -> list[str]:
-    """
-    Validate each citation against the exact chunks that were sent to the LLM.
-
-    Checks:
-      1. (law_reference, article_locator) pair exists in context_chunks.
-      2. quote is non-empty and is an exact substring of at least one chunk's text.
-    """
-    known_pairs = {
-        (c.get("law_reference"), c.get("article_locator"))
-        for c in context_chunks
-    }
-    all_texts = [c.get("text") or "" for c in context_chunks]
-    errors:    list[str] = []
-
-    for i, citation in enumerate(citations, 1):
-        law_ref = citation.get("law_reference", "")
-        locator = citation.get("article_locator", "")
-        quote   = citation.get("quote", "")
-
-        if (law_ref, locator) not in known_pairs:
-            errors.append(
-                f"Citation {i}: ({law_ref!r}, {locator!r}) not in context set."
-            )
-
-        if not quote:
-            errors.append(f"Citation {i}: quote is empty.")
-        elif not any(quote in t for t in all_texts):
-            errors.append(
-                f"Citation {i}: quote is not an exact substring of any context source."
-            )
 
     return errors
 
@@ -387,6 +304,12 @@ def main() -> None:
                         help="Minimum similarity threshold (default: 0.75)")
     parser.add_argument("--model",          default="gpt-4o-mini",    metavar="MODEL",
                         help="OpenAI chat model (default: gpt-4o-mini)")
+    parser.add_argument("--hybrid",         action="store_true",
+                        help=(
+                            "Use server-side FTS+vector hybrid retrieval. "
+                            "Combines HNSW vector search with Postgres FTS for "
+                            "better recall on keyword-specific queries (requires migration 004)."
+                        ))
     parser.add_argument("--debug",          action="store_true",
                         help="Print diagnostic output to stderr")
     args = parser.parse_args()
@@ -404,14 +327,23 @@ def main() -> None:
     embedding = embed_query(openai_client, args.query)
 
     # 2. Retrieve
-    hits = retrieve(supabase_client, embedding, k)
+    if args.hybrid:
+        hits = retrieve_hybrid(supabase_client, embedding, args.query, top_k=k)
+        if not hits:
+            log("[ERROR] No retrieval hits returned. Cannot generate answer.")
+            sys.exit(1)
+        if args.debug:
+            log(f"[hybrid] Server-side FTS+vector → {len(hits)} results")
+    else:
+        hits = retrieve(supabase_client, embedding, k)
 
     # 3. Assess retrieval quality
     strong, stats, sufficient = assess_retrieval(hits, args.min_similarity)
 
     # 4. Retrieval summary → stderr
+    mode_tag = " [hybrid]" if args.hybrid else ""
     log(f"Query    : {args.query}")
-    log(f"Retrieved: {len(hits)} chunks  |  strong (≥{args.min_similarity}): {len(strong)}")
+    log(f"Retrieved: {len(hits)} chunks{mode_tag}  |  strong (≥{args.min_similarity}): {len(strong)}")
     log(
         f"Similarity — max: {stats['max']:.4f}  min: {stats['min']:.4f}  "
         f"avg: {stats['avg']:.4f}  delta: {stats['delta']:.4f}"
@@ -420,7 +352,13 @@ def main() -> None:
     for i, row in enumerate(hits, 1):
         sim  = float(row.get("similarity") or 0.0)
         flag = "✓" if sim >= args.min_similarity else "·"
-        log(f"  [{i}] {flag} {sim:.4f}  {row.get('law_reference', ''):<12}  {row.get('article_locator', '')}")
+        if args.hybrid:
+            vec = float(row.get("vector_sim") or 0.0)
+            fts = float(row.get("fts_score") or 0.0)
+            log(f"  [{i}] {flag} sim={sim:.4f}  vec={vec:.4f}  fts={fts:.4f}"
+                f"  {row.get('law_reference', ''):<12}  {row.get('article_locator', '')}")
+        else:
+            log(f"  [{i}] {flag} {sim:.4f}  {row.get('law_reference', ''):<12}  {row.get('article_locator', '')}")
     log()
 
     # 5. Insufficient evidence path

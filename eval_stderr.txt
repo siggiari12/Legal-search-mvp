@@ -1,0 +1,122 @@
+Evaluating 15 queries  (k=8  high=0.7  mod=0.60  mid=0.5)
+
+[01/15] Hvenær má segja starfsmanni upp?
+       max=0.5619  avg=0.5490  delta=0.0008  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.5619  80/2022       Starfræksla loftfara opinberra aðila sem sinna þjónustu í almannaþágu eða skyldum á ábyrgð ríkisins sem tekur til eftirt
+         [2] 0.5610  72/2002       Í lögum þessum er merking eftirfarandi hugtaka sem hér segir: Framseljandi er einstaklingur eða lögpersóna sem við aðila
+         [3] 0.5500  19/1996       1. Ekkert aðildarríki skal vísa úr landi, endursenda (refouler) eða framselja mann til annars ríkis ef veruleg ástæða er
+
+[02/15] Hver er löglegur uppsagnarfrestur?
+       max=0.6730  avg=0.6448  delta=0.0263  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.6730  63/2000       Uppsagnarfrestur starfsmanna samkvæmt lögum, kjarasamningum eða ráðningarsamningum breytist ekki þrátt fyrir ákvæði laga
+         [2] 0.6467  88/2019       Ef sameiginleg umsýslustofnun fjárfestir réttindatekjum eða öðrum arði af fjárfestingu þeirra ber henni að gera það í þá
+         [3] 0.6439  60/2020       Um fyrningarfrest kröfu vegna námslána fer eftir ákvæðum laga um fyrningu kröfuréttinda.  Ákvæði laga um gjaldþrotaskipt
+
+[03/15] Hverjar eru skyldur vinnuveitanda gagnvart starfsmanni?
+       max=0.6677  avg=0.6409  delta=0.0223  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.6677  46/1980       Atvinnurekandi skal tryggja, að heilsuverndareftirlit, læknisskoðanir, mælingar og rannsóknir valdi ekki tekjutapi starf
+         [2] 0.6454  10/1979       1. Allar þjóðir hafa sjálfsákvörðunarrétt. Vegna þess réttar ákveða þær frjálst stjórnmálalegar aðstæður sínar og framfy
+         [3] 0.6424  46/1980       [[Ráðherra] setur nánari reglur, að fenginni umsögn stjórnar Vinnueftirlits ríkisins], um gerð og notkun véla, tækja og 
+
+[04/15] Hvað er orlofsréttur launþega?
+       max=0.6960  avg=0.6643  delta=0.0028  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.6960  53/1972       Orlofsnefndir geta leitað fyrirgreiðslu hjá [ráðuneytinu], [því ráðuneyti er fer með fræðslumál] og öðrum hlutaðeigendum
+         [2] 0.6932  144/2020      Þau réttindi sem starfsmaður hefur þegar áunnið sér eða er að ávinna sér á upphafsdegi foreldraorlofs skulu haldast óbre
+         [3] 0.6912  53/1972       Orlofsnefndir skipuleggja orlof húsmæðra hver í sínu umdæmi og sjá um rekstur orlofsheimila.
+
+[05/15] Hvenær fyrnist krafa?
+       max=0.6911  avg=0.5921  delta=0.1012  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.6911  30/2004       Krafa um bætur fyrnist á fjórum árum. Fresturinn hefst við lok þess almanaksárs er vátryggður fékk nauðsynlegar upplýsin
+         [2] 0.5898  81/2004       Ef seljandi lands eða annarrar fasteignar vanrækir að bjóða forkaupsrétt í samræmi við ákvæði þessa kafla geta forkaupsr
+         [3] 0.5803  70/2022       Við þróun, uppbyggingu og rekstur fjarskiptaneta í íslenskri lögsögu skal grípa til ráðstafana til að bregðast við áhætt
+
+[06/15] Getur leigjandi rifið leigusamning?
+       max=0.6036  avg=0.5867  delta=0.0094  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.6036  36/1994       Áður en afhending hins leigða húsnæðis fer fram er leigusala rétt að krefjast þess að leigjandi setji honum tryggingu fy
+         [2] 0.5941  36/1994       Leigumiðlari skal hafa opna skrifstofu þar sem hann rekur starfsemi sína.  Leigumiðlari ber ábyrgð á að leigusamningur s
+         [3] 0.5937  100/2021      Samningstími lóðarleigu skal taka mið af tímalengd rekstrar- eða sérleyfis. Ef rekstrar- eða sérleyfissamningi er rift, 
+
+[07/15] Hvernig er hjúskapur stofnaður?
+       max=0.5731  avg=0.5635  delta=0.0020  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.5731  63/2006       Háskólar, sem starfa á grundvelli laga þessara, skulu gera með sér samkomulag um gagnkvæma viðurkenningu námsþátta [og n
+         [2] 0.5711  68/1994       Stofnaður er sjóður er heitir sameignarsjóður Eignarhaldsfélagsins Brunabótafélag Íslands.  Tilgangur sjóðsins er hinn s
+         [3] 0.5683  40/2006       Stofnun Árna Magnússonar í íslenskum fræðum gerir samstarfssamninga við Háskóla Íslands um starfstengsl, fjárhagsleg sam
+
+[08/15] Hvað er þjófnaður samkvæmt hegningarlögum?
+       max=0.6445  avg=0.5299  delta=0.0772  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.6445  61/2003       Höfn samkvæmt kafla þessum hefur starfsheimildir í samræmi við 5. tölul. 3. gr.
+         [2] 0.5673  30/2002       Þjónustuveitandi skal staðfesta móttöku pöntunar frá þjónustuþega með rafrænum hætti án tafar.  Pöntun og staðfesting te
+         [3] 0.5461  3/1963        Dómsforseti ákveður í samráði við saksóknara og verjanda stað og stund fyrsta þinghalds landsdóms.
+
+[09/15] Hvenær telst verknaður af ásetningi freminn?
+       max=0.6667  avg=0.6291  delta=0.0315  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.6667  35/1985       Um rétt til greiðslu í erlendri mynt fer eftir því sem landslög ákveða á hverjum tíma.  [Útgerðarmaður skal tryggja að s
+         [2] 0.6351  55/2013       Húsnæði, innréttingar, girðingar og annar búnaður sem ætlaður er dýrum skal þannig úr garði gerður að tekið sé tillit ti
+         [3] 0.6319  73/2007       [Ráðuneytinu] er heimilt að halda skrá yfir fólk sem er reiðubúið að takast á hendur friðargæsluverkefni erlendis. Heimi
+
+[10/15] Hvernig er hlutafélag stofnað?
+       max=0.7336  avg=0.6998  delta=0.0174  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.7336  2/1995        Hlutafélag getur eignast eigin hluti skv. 55. gr. án heimildar hluthafafundar ef slíkt reynist nauðsynlegt til að afstýr
+         [2] 0.7161  64/2010       Hlutafé félagsins við stofnun þess skal vera 20 milljónir króna og greiðast úr ríkissjóði.
+         [3] 0.7001  2/1995        Hlutafélag má ekki gegn endurgjaldi eignast eigin hluti með kaupum eða fá þá að veði ef nafnverð samanlagðra hluta, sem 
+
+[11/15] Hverjar eru skyldur stjórnar hlutafélags?
+       max=0.6731  avg=0.6324  delta=0.0011  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.6731  61/2003       Höfn samkvæmt kafla þessum skal rekin sem opinbert fyrirtæki með hafnarstjórn í eigu sveitarfélags. Sérstakar hafnarstjó
+         [2] 0.6719  61/2003       Hafnir skulu á hverjum tíma miðla upplýsingum um lengd, breidd og djúpristu þeirra skipa sem þær geta tekið á móti. [Veg
+         [3] 0.6382  100/2016      Ráðherra setur reglugerð sem útfærir frekar kröfur um: áhættustýringu, sér í lagi hvað varðar eigna- og skuldastýringu o
+
+[12/15] Hverjir mega starfa sem læknar?
+       max=0.5935  avg=0.5702  delta=0.0053  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.5935  60/2007       … Helstu verkefni [svæðisstjórnar] eru: Stefnumótun í málefnum þjóðgarðsins í samræmi við markmið laga þessara. Yfirumsj
+         [2] 0.5882  112/2021      Kjörstað fyrir hverja kjördeild ákveður sveitarstjórn. Á sama kjörstað mega vera fleiri en ein kjördeild.  Kjörstað skal
+         [3] 0.5692  90/1996       Kostnaður af starfsemi lögreglunnar greiðist úr ríkissjóði.
+
+[13/15] Samningur gerður við mann sem er ekki lögráða er ógildur
+       max=0.6126  avg=0.5544  delta=0.0223  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.6126  151/2006      Heimilt er með kjarasamningum eða samningum milli atvinnurekanda og fulltrúa starfsmanna að kveða á um tilhögun og framk
+         [2] 0.5903  94/1986       Kjarasamningur framlengist um sex mánuði í senn, með óbreyttum uppsagnarfresti, hafi honum eigi verið sagt upp réttilega
+         [3] 0.5650  32/2009       Ábyrgðarmaður verður ekki skuldbundinn af ábyrgðarsamningi hafi lántaki aldrei orðið skuldbundinn til að inna greiðslu a
+
+[14/15] Bótaábyrgð vegna tjóns af völdum bifreiðar
+       max=0.6397  avg=0.6177  delta=0.0037  kw=N  verdict=borderline
+       Top 3 hits:
+         [1] 0.6397  31/1993       Hvort hjóna ber ábyrgð á þeim skuldbindingum sem á því hvíla hvort sem þær hafa stofnast fyrir hjúskapinn eða síðar.
+         [2] 0.6360  28/2017       Flytjendur sem selja eða annast farþegaflutninga á vegum skulu láta farþegum í té skriflega eða rafrænt á öllum samgöngu
+         [3] 0.6259  50/2007       Félagsmaður, stjórnarmaður, framkvæmdastjóri eða skilanefndarmaður er skaðabótaskyldur vegna tjóns sem hann veldur félag
+
+[15/15] Skilyrði fyrir veitingu rekstrarleyfis
+       max=0.7374  avg=0.7002  delta=0.0174  kw=Y  verdict=likely_good
+       Top 3 hits:
+         [1] 0.7374  88/2021       Rekstrarleyfi skal gefið út til ákveðins tíma, þó ekki lengur en til fimm ára. Heimilt er að binda rekstrarleyfi skilyrð
+         [2] 0.7200  80/2022       Skilyrði fyrir útgáfu flugrekstrarleyfis eru eftirfarandi: að höfuðstöðvar fyrirtækis umsækjanda séu hér á landi, að ums
+         [3] 0.7179  116/2021      Rekstrarfélag skal útbúa útboðslýsingu og lykilupplýsingar, sbr. 58.–59. gr., fyrir hvern verðbréfasjóð sem það rekur. Þ
+
+
+Traceback (most recent call last):
+  File "C:\Users\Sigurður Ari\Desktop\Legal-search-mvp\scripts\evaluate_retrieval.py", line 684, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\Sigurður Ari\Desktop\Legal-search-mvp\scripts\evaluate_retrieval.py", line 674, in main
+    print_table(results)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Sigurður Ari\Desktop\Legal-search-mvp\scripts\evaluate_retrieval.py", line 347, in print_table
+    print(header)
+    ~~~~~^^^^^^^^
+  File "C:\Users\Sigurður Ari\AppData\Local\Python\pythoncore-3.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2265' in position 75: character maps to <undefined>

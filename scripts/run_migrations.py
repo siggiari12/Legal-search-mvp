@@ -3,7 +3,7 @@
 Database Migration Runner
 
 Runs SQL migrations against the PostgreSQL database.
-Uses DATABASE_URL or DATABASE_URL_DIRECT environment variable.
+Uses the DATABASE_URL environment variable (Supabase transaction pooler).
 
 Usage:
     python scripts/run_migrations.py
@@ -32,12 +32,12 @@ MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
 
 
 def get_database_url() -> str:
-    """Get database URL, preferring direct connection for migrations."""
-    url = os.environ.get("DATABASE_URL_DIRECT") or os.environ.get("DATABASE_URL")
+    """Get database URL from DATABASE_URL (Supabase transaction pooler)."""
+    url = os.environ.get("DATABASE_URL")
     if not url:
-        print("ERROR: DATABASE_URL or DATABASE_URL_DIRECT environment variable not set.")
-        print("Set it to your PostgreSQL connection string.")
-        print("Example: postgresql://postgres:password@localhost:5432/legal_search")
+        print("ERROR: DATABASE_URL environment variable is not set.")
+        print("Set it to the Supabase transaction pooler connection string.")
+        print("Example: postgresql://postgres.[ref]:password@aws-0-eu-west-1.pooler.supabase.com:6543/postgres")
         sys.exit(1)
     return url
 
@@ -120,7 +120,10 @@ async def main(dry_run: bool = False):
 
     # Connect to database
     try:
-        conn = await asyncpg.connect(database_url)
+        conn = await asyncpg.connect(
+            database_url,
+            statement_cache_size=0,
+        )
     except Exception as e:
         print(f"\nERROR: Could not connect to database: {e}")
         sys.exit(1)

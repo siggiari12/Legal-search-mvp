@@ -1,0 +1,8 @@
+Running [1/8]: Hver er löglegur uppsagnarfrestur?
+Running [2/8]: Hvenær má segja starfsmanni upp?
+Running [3/8]: Hvenær fyrnist krafa?
+Running [4/8]: Hvernig er hjúskapur stofnaður?
+Running [5/8]: Getur leigjandi rifið leigusamning?
+Running [6/8]: Hvað er þjófnaður samkvæmt hegningarlögum?
+Running [7/8]: Hvernig er hlutafélag stofnað?
+Running [8/8]: Hverjir mega starfa sem læknar?
