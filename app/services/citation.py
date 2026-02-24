@@ -79,11 +79,15 @@ def build_context(
             remaining = MAX_CONTEXT_CHARS - total
             if remaining > 100:
                 parts.append(block[:remaining])
-                context_chunks.append({"chunk_id": chunk_id, **chunk})
+                # Store truncated text so validate_citations checks against
+                # exactly what the LLM saw, not the full DB text.
+                context_chunks.append({"chunk_id": chunk_id, **chunk, "text": text})
             break
 
         parts.append(block)
-        context_chunks.append({"chunk_id": chunk_id, **chunk})
+        # Store truncated text so validate_citations checks against
+        # exactly what the LLM saw, not the full DB text.
+        context_chunks.append({"chunk_id": chunk_id, **chunk, "text": text})
         total += len(block)
 
     return "\n\n".join(parts), context_chunks
