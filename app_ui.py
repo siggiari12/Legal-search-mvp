@@ -175,7 +175,10 @@ def render_citations(citations: list):
 
 
 def render_assistant_message(data: dict, raw_json: dict, show_debug: bool):
-    """Render a successful assistant turn."""
+    """Render a successful assistant turn.
+
+    `data` is the flat API response dict (keys: answer, citations, confidence …).
+    """
     answer     = data.get("answer", "")
     citations  = data.get("citations", [])
     confidence = data.get("confidence", "none")
@@ -200,8 +203,11 @@ def render_assistant_message(data: dict, raw_json: dict, show_debug: bool):
 
 
 def render_failure_message(data: dict, raw_json: dict, show_debug: bool):
-    """Render a failure/refusal turn."""
-    title      = data.get("title", "Villa")
+    """Render a failure/refusal turn.
+
+    `data` is the flat API response dict (keys: failure_type, message …).
+    """
+    title      = data.get("title") or FAILURE_LABELS.get(data.get("failure_type", ""), "Villa")
     message    = data.get("message", "Óþekkt villa.")
     suggestion = data.get("suggestion")
     clarq      = data.get("clarification_question")
@@ -226,8 +232,8 @@ for msg in st.session_state.messages:
         else:
             payload = msg["payload"]
             raw     = msg["raw"]
-            if payload.get("success") and payload.get("data"):
-                render_assistant_message(payload["data"], raw, debug_mode)
+            if payload.get("success"):
+                render_assistant_message(payload, raw, debug_mode)
             elif payload.get("error"):
                 err = payload["error"]
                 st.error(f"**{err.get('type','Villa')}:** {err.get('message','')}")
@@ -235,8 +241,7 @@ for msg in st.session_state.messages:
                     with st.expander("🔧 Raw JSON"):
                         st.json(raw)
             else:
-                data = payload.get("data") or {}
-                render_failure_message(data, raw, debug_mode)
+                render_failure_message(payload, raw, debug_mode)
 
 # ─────────────────────────────────────────────
 # Chat input
@@ -253,15 +258,14 @@ if prompt := st.chat_input("Spurðu um íslensk lög..."):
         with st.spinner("Leita í lagasafninu…"):
             result = query_backend(prompt)
 
-        # Render response
+        # Render response — API returns a flat dict (no nested "data" key)
         if result.get("error"):
             err = result["error"]
             st.error(f"**{err.get('type', 'Villa')}:** {err.get('message', '')}")
-        elif result.get("success") and result.get("data"):
-            render_assistant_message(result["data"], result, debug_mode)
+        elif result.get("success"):
+            render_assistant_message(result, result, debug_mode)
         else:
-            data = result.get("data") or {}
-            render_failure_message(data, result, debug_mode)
+            render_failure_message(result, result, debug_mode)
 
     # Persist to session state
     st.session_state.messages.append({

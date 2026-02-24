@@ -49,9 +49,9 @@ SVARSNIÐ (JSON):
   "answer_markdown": "Svarið hér með [1] tilvísunum...",
   "citations": [
     {
-      "chunk_id": "<echoed exactly from SOURCE chunk_id: ...>",
-      "law_reference": "Lög nr. X/XXXX",
-      "article_locator": "Lög nr. X/XXXX - Y. gr.",
+      "chunk_id": "<chunk_id nákvæmlega eins og í SOURCE blokk>",
+      "law_reference": "<law_reference nákvæmlega eins og í SOURCE blokk>",
+      "article_locator": "<article_locator nákvæmlega eins og í SOURCE blokk>",
       "quote": "NÁKVÆM tilvitnun — orðrétt úr textanum"
     }
   ],
