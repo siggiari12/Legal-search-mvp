@@ -12,6 +12,8 @@ keys alongside the standard 'similarity' (= combined score) used downstream.
 
 from __future__ import annotations
 
+from app.services.lemmatize import get_lemmatized_text
+
 
 def retrieve_vector(sb, embedding: list[float], k: int) -> list[dict]:
     """
@@ -50,6 +52,10 @@ def retrieve_hybrid(
 
     Degrades to pure vector when no query tokens are >= 4 chars (fts_score=0).
 
+    query_text is lemmatised before being sent to the FTS engine so that
+    inflected query forms (e.g. "hegningarlögum") match the base forms
+    stored in search_tsv (e.g. "hegningarlög").
+
     Returns list of dicts with keys:
         id, law_reference, article_locator, text,
         similarity  (= combined score, used by assess_retrieval),
@@ -58,11 +64,12 @@ def retrieve_hybrid(
 
     Requires migration 004_add_fts_and_hybrid.sql to be applied.
     """
+    lemmatized_query = get_lemmatized_text(query_text)
     result = sb.rpc(
         "match_documents_hybrid",
         {
             "query_embedding":   embedding,
-            "query_text":        query_text,
+            "query_text":        lemmatized_query,
             "match_count":       top_k,
             "vector_candidates": vec_k,
             "fts_candidates":    fts_k,
