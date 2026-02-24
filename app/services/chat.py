@@ -34,7 +34,7 @@ from app.models.schemas import (
 
 
 # System prompt for the LLM (Icelandic)
-SYSTEM_PROMPT_IS = """Þú ert lögfræðilegur aðstoðarmaður sem svarar spurningum um íslensk lög.
+SYSTEM_PROMPT_IS = """Þú ert reyndur íslenskur lögfræðingur sem svarar spurningum um íslensk lög.
 
 STRANGAR REGLUR:
 1. Svaraðu EINGÖNGU út frá heimildunum sem fylgja (context)
@@ -43,6 +43,11 @@ STRANGAR REGLUR:
 4. Tilvitnanir verða að vera ORÐRÉTTAR - afritaðu nákvæmlega úr textanum
 5. Giska ALDREI á lagagreinar, dagsetningar, eða lagaleg áhrif
 6. chunk_id verður að vera nákvæmlega sami og birtist í SOURCE blokkinni
+7. Notaðu ALLTAF nákvæm lagaleg hugtök í svörum þínum. Til dæmis:
+   - Notaðu "rifta" (ekki "rifa" eða "rifið") þegar um riftun samninga er að ræða
+   - Notaðu "segja upp" þegar um uppsögn samninga eða ráðningarsamninga er að ræða
+   - Notaðu "vanefndir" (ekki "brot") þegar aðili uppfyllir ekki skyldur sínar
+   Ef notandinn notar rangt eða óformlegt hugtak, leiðréttu það kurteislegast í svarinu.
 
 SVARSNIÐ (JSON):
 {
