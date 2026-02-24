@@ -1,53 +1,61 @@
-# TODO – 2026-02-24
+# TODO – 2026-02-24 (updated)
 
 ## Current System State
 
 ### Retrieval
 
-- Hybrid retrieval active (vector + FTS weighted scoring)
-- `assess_retrieval` now gates sufficiency using `vector_sim`
-- Combined similarity is used for stats display only
-- No more threshold deflation from FTS weighting
-- Vector-only and hybrid both functioning
-- FTS currently uses PostgreSQL `simple` dictionary
-- **Observed issue:** FTS scores are `0.0000` for 7/8 natural-language Icelandic queries
-- **Likely cause:** no stemming / morphological normalization (literal token matching only)
+- Hybrid retrieval active (vector + FTS weighted scoring, weights 0.7/0.3)
+- `assess_retrieval` gates sufficiency on `vector_sim` (not combined score)
+- No threshold deflation from FTS weighting
+- FTS uses `search_tsv_lemmatized` (migration 009) with `simple` dictionary
+- Both query and document text are lemmatised via Greynir before FTS matching
+- 17,911 documents lemmatised and written to `search_lemmatized` +
+  `search_tsv_lemmatized`; GIN index created
 
 ### Citation System
 
-- `app/services/citation.py` created
-- `normalize_ws`, `build_context`, `validate_citations` implemented
-- `chunk_id` required in all citations
-- Citation validation checks:
-  - `chunk_id` present
-  - `chunk_id` exists in context
-  - `law_reference` exact match
-  - `article_locator` exact match
-  - quote non-empty
-  - whitespace-normalised substring match
+- `app/services/citation.py`: `normalize_ws`, `build_context`, `validate_citations`
+- `chunk_id` anchored: model must echo chunk_id from SOURCE block
+- Validation checks: chunk_id present → in context → law_reference exact →
+  article_locator exact → quote non-empty → whitespace-normalised substring match
 - 37/37 tests passing
-- Regression cases Q3 and Q7 covered
 
-### Validation Results (Hybrid after fix)
+### Validation Results (Hybrid, query + document lemmatisation)
 
-- GOOD: 4
-- ACCEPTABLE: 3
-- PROBLEMATIC: 1
+- GOOD: 6
+- ACCEPTABLE: 1  (Q4 – hjúskapur; no relevant article retrieved)
+- PROBLEMATIC: 1  (Q7 – hlutafélag; right article retrieved, quote paraphrased)
 - Declined: 0
 - Citation pass: 7/8
-- **Remaining issue (Q7):** retrieval did not surface correct article; model cited adjacent article content but grounding caught it
 
 ---
 
-## Tomorrow – Investigation Focus
+## Open Issues
 
-**Primary task:**
-Investigate Icelandic FTS mismatch and decide architecture direction.
+### Q7 – Quote paraphrasing ("Hvernig er hlutafélag stofnað?")
 
-**Questions to resolve:**
+- `2/1995 - 4. gr.` IS retrieved (ranks 6–8, outside top-5 display)
+- Model cites correct chunk_id and metadata
+- But quote does not verbatim match chunk text → `validate_citations` blocks it
+- Likely cause: model constructs quote from memory / truncates with `...`
+- **Candidate fixes:**
+  - Strengthen SYSTEM_PROMPT: "copy the exact words character-for-character"
+  - Inspect chunk text for `2/1995 - 4. gr.` to confirm quote mismatch vs chunk content
 
-- Should hybrid remain, or revert to vector-only?
-- Should FTS weight be reduced (e.g., 0.1–0.15)?
-- Should query normalization be introduced before FTS?
-- Is proper Icelandic stemming feasible in Supabase/Postgres?
-- Would FTS be better used only as exact-term reranker rather than weighted hybrid?
+### Q4 – Retrieval coverage ("Hvernig er hjúskapur stofnaður?")
+
+- No relevant article surfaced; answer fell back to general knowledge
+- Confidence LOW, no citations produced (ACCEPTABLE, not PROBLEMATIC)
+- **Candidate fixes:**
+  - Check whether the relevant article (hjúskaparlög) is in the DB at all
+  - Try `--k 12` to widen retrieval net
+  - Check embeddings for hjúskapur-related chunks
+
+---
+
+## Next Steps (priority order)
+
+1. **Harden verbatim-quote instruction in SYSTEM_PROMPT** (Q7 fix)
+2. **Inspect `2/1995 - 4. gr.` chunk text** to confirm the paraphrase gap
+3. **Investigate Q4 retrieval** — query DB for hjúskapur-related documents
+4. **Re-run validation** after prompt hardening to measure improvement
