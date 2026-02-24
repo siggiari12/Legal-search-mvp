@@ -25,6 +25,7 @@ from app.services.chat import ChatService
 from app.services.db_search import DatabaseSearcher
 from app.services.embedding import EmbeddingService
 from app.services.llm import ClaudeLLM
+from app.db.connection import get_db_pool
 
 
 class ProductionChatService:
@@ -55,6 +56,7 @@ class ProductionChatService:
         self.skip_embeddings = skip_embeddings
 
         self._searcher: Optional[DatabaseSearcher] = None
+        self._pool = None  # asyncpg.Pool for hybrid retrieval
         self._embedding_service: Optional[EmbeddingService] = None
         self._llm: Optional[ClaudeLLM] = None
         self._chat_service: Optional[ChatService] = None
@@ -69,24 +71,27 @@ class ProductionChatService:
         if self._connected:
             return self
 
-        # Initialize database searcher
+        # Initialize database searcher (kept for health_check only)
         self._searcher = DatabaseSearcher()
         await self._searcher.connect()
+
+        # Get asyncpg pool for hybrid retrieval RPC
+        self._pool = await get_db_pool()
 
         # Initialize embedding service (optional)
         if not self.skip_embeddings:
             try:
                 self._embedding_service = EmbeddingService()
             except ValueError:
-                # No OpenAI key - fall back to keyword-only search
+                # No OpenAI key - fall back to FTS-only search
                 self._embedding_service = None
 
         # Initialize LLM
         self._llm = ClaudeLLM()
 
-        # Create chat service with dependencies
+        # Wire ChatService with pool instead of searcher
         self._chat_service = ChatService(
-            searcher=self._searcher._hybrid_searcher,
+            pool=self._pool,
             llm_fn=self._llm,
             embedding_fn=self._embedding_service.embed if self._embedding_service else None,
             debug=self.debug,
